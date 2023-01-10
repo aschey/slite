@@ -1,0 +1,14 @@
+on: [push]
+name: CI
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+        with:
+          sharedKey: cache-${{ hashFiles('**/Cargo.lock') }}
+      - name: Test
+        run: cargo test

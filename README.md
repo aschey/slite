@@ -1,2 +1,4 @@
-# sqlite-declarative-migrations-rs
+
+# schemalite
+
 Declarative migrations for Sqlite
