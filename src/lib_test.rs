@@ -1,6 +1,6 @@
-use crate::{get_pragma, normalize_sql, Migrator, Options};
+use crate::{normalize_sql, MigrationError, Migrator, Options};
 use rstest::rstest;
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct SqliteMetadata {
@@ -17,14 +17,21 @@ fn test_schema_migration(#[values(0, 1, 2, 3, 4)] from: usize, #[values(0, 1, 2,
         (from, to),
         (1, 0) | (2, 0) | (2, 1) | (2, 3) | (2, 4) | (3, 0) | (3, 1) | (4, 0) | (4, 1)
     );
-    let connection = Connection::open_in_memory().unwrap();
+    let connection = get_connection(&format!("{from}{to}"));
+    let connection2 = get_connection(&format!("{from}{to}"));
     connection.execute_batch(schemas[from]).unwrap();
 
     // let migrator = Migrator::init(connection, &[schemas[to]], Options::default());
     if need_allow_deletions {
-        // test error assert_schema_equal(&migrator.connection, schemas[from])
+        let connection = get_connection(&format!("{from}{to}error"));
+        let connection2 = get_connection(&format!("{from}{to}error"));
+        connection.execute_batch(schemas[from]).unwrap();
+        let migrator = Migrator::init(connection, &[schemas[to]], Options::default()).unwrap();
+        let result = migrator.migrate();
+        assert!(matches!(result, Err(MigrationError::DataLoss(_))));
+        assert_schema_equal(&connection2, schemas[from]);
     }
-    let mut migrator = Migrator::init(
+    let migrator = Migrator::init(
         connection,
         &[schemas[to]],
         Options {
@@ -33,66 +40,67 @@ fn test_schema_migration(#[values(0, 1, 2, 3, 4)] from: usize, #[values(0, 1, 2,
     )
     .unwrap();
     migrator.migrate().unwrap();
-    assert_schema_equal(&migrator.connection, schemas[to]);
+    assert_schema_equal(&connection2, schemas[to]);
 }
 
 #[rstest]
 fn test_data_migration() {
     let schemas = schemas();
-    let connection = Connection::open_in_memory().unwrap();
+    let get_connection = || get_connection("123");
+    // Ensure at least one connection stays alive so the memory db isn't dropped.
+    let _connection = get_connection();
+    let connection = get_connection();
     connection.execute_batch(schemas[1]).unwrap();
-    {
-        let mut insert_statement = connection
-            .prepare("INSERT INTO Node(node_oid, node_id) VALUES (?, ?)")
-            .unwrap();
-        insert_statement.execute([0, 0]).unwrap();
-        insert_statement.execute([1, 100]).unwrap();
-    }
-    let mut migrator = Migrator::init(connection, &[schemas[2]], Options::default()).unwrap();
+
+    let mut statement = connection
+        .prepare("INSERT INTO Node(node_oid, node_id) VALUES (?, ?)")
+        .unwrap();
+    statement.execute([0, 0]).unwrap();
+    statement.execute([1, 100]).unwrap();
+
+    let migrator = Migrator::init(get_connection(), &[schemas[2]], Options::default()).unwrap();
     migrator.migrate().unwrap();
-    {
-        let mut select_statement = migrator
-            .connection
-            .prepare("SELECT node_oid, node_id, active FROM Node")
-            .unwrap();
-        let results: Vec<(i32, String, i32)> = select_statement
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
-            .unwrap()
-            .map(|r| r.unwrap())
-            .collect();
-        assert_eq!((0, "0".to_owned(), 1), results.first().unwrap().clone());
-        assert_eq!((1, "100".to_owned(), 1), results.get(1).unwrap().clone());
-        migrator
-            .connection
-            .execute(
-                "UPDATE Node SET active = 0, node_id = 'abc' WHERE node_oid = 0",
-                [],
-            )
-            .unwrap();
-        let mut insert_statement = migrator
-            .connection
-            .prepare("INSERT INTO Job(node_oid, id) VALUES (?,?)")
-            .unwrap();
-        insert_statement.execute([0, 1234]).unwrap();
-        insert_statement.execute([0, 5432]).unwrap();
-        insert_statement.execute([1, 1234]).unwrap();
-        insert_statement.execute([1, 9876]).unwrap();
-        let mut select_statement = migrator
-            .connection
-            .prepare("SELECT node_id, id FROM Job INNER JOIN Node ON Node.node_oid == Job.node_oid")
-            .unwrap();
-        let rows: Vec<(String, i32)> = select_statement
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-            .unwrap()
-            .map(|r| r.unwrap())
-            .collect();
-        assert_eq!(("abc".to_owned(), 1234), rows.first().unwrap().clone());
-        assert_eq!(("abc".to_owned(), 5432), rows.get(1).unwrap().clone());
-        assert_eq!(("100".to_owned(), 1234), rows.get(2).unwrap().clone());
-        assert_eq!(("100".to_owned(), 9876), rows.get(3).unwrap().clone());
-    }
-    let mut migrator = Migrator::init(
-        migrator.connection,
+    let connection = get_connection();
+
+    let mut statement = connection
+        .prepare("SELECT node_oid, node_id, active FROM Node")
+        .unwrap();
+    let results: Vec<(i32, String, i32)> = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!((0, "0".to_owned(), 1), results.first().unwrap().clone());
+    assert_eq!((1, "100".to_owned(), 1), results.get(1).unwrap().clone());
+    connection
+        .execute(
+            "UPDATE Node SET active = 0, node_id = 'abc' WHERE node_oid = 0",
+            [],
+        )
+        .unwrap();
+    let mut statement = connection
+        .prepare("INSERT INTO Job(node_oid, id) VALUES (?,?)")
+        .unwrap();
+    statement.execute([0, 1234]).unwrap();
+    statement.execute([0, 5432]).unwrap();
+    statement.execute([1, 1234]).unwrap();
+    statement.execute([1, 9876]).unwrap();
+    let mut statement = connection
+        .prepare("SELECT node_id, id FROM Job INNER JOIN Node ON Node.node_oid == Job.node_oid")
+        .unwrap();
+    let rows: Vec<(String, i32)> = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(("abc".to_owned(), 1234), rows.first().unwrap().clone());
+    assert_eq!(("abc".to_owned(), 5432), rows.get(1).unwrap().clone());
+    assert_eq!(("100".to_owned(), 1234), rows.get(2).unwrap().clone());
+    assert_eq!(("100".to_owned(), 9876), rows.get(3).unwrap().clone());
+
+    let migrator = Migrator::init(
+        get_connection(),
         &[schemas[3]],
         Options {
             allow_deletions: true,
@@ -100,46 +108,43 @@ fn test_data_migration() {
     )
     .unwrap();
     migrator.migrate().unwrap();
-    {
-        let mut statement = migrator
-            .connection
-            .prepare("SELECT node_id, id FROM Job INNER JOIN Node ON Node.node_oid == Job.node_oid")
-            .unwrap();
-        let rows: Vec<(String, i32)> = statement
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-            .unwrap()
-            .map(|r| r.unwrap())
-            .collect();
-        assert_eq!(("abc".to_owned(), 1234), rows.first().unwrap().clone());
-        assert_eq!(("abc".to_owned(), 5432), rows.get(1).unwrap().clone());
-        assert_eq!(("100".to_owned(), 1234), rows.get(2).unwrap().clone());
-        assert_eq!(("100".to_owned(), 9876), rows.get(3).unwrap().clone());
-    }
-    let mut migrator =
-        Migrator::init(migrator.connection, &[schemas[4]], Options::default()).unwrap();
+    let connection = get_connection();
+
+    let mut statement = connection
+        .prepare("SELECT node_id, id FROM Job INNER JOIN Node ON Node.node_oid == Job.node_oid")
+        .unwrap();
+    let rows: Vec<(String, i32)> = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(("abc".to_owned(), 1234), rows.first().unwrap().clone());
+    assert_eq!(("abc".to_owned(), 5432), rows.get(1).unwrap().clone());
+    assert_eq!(("100".to_owned(), 1234), rows.get(2).unwrap().clone());
+    assert_eq!(("100".to_owned(), 9876), rows.get(3).unwrap().clone());
+
+    let migrator = Migrator::init(get_connection(), &[schemas[4]], Options::default()).unwrap();
     migrator.migrate().unwrap();
-    {
-        let mut statement = migrator
-            .connection
-            .prepare("SELECT node_oid, node_id, active FROM Node")
-            .unwrap();
-        let rows: Vec<(i32, String, i32)> = statement
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
-            .unwrap()
-            .map(|r| r.unwrap())
-            .collect();
-        assert_eq!((0, "abc".to_owned(), 0), rows.first().unwrap().clone());
-        assert_eq!((1, "100".to_owned(), 1), rows.get(1).unwrap().clone());
-    }
-    migrator
-        .connection
+
+    let mut statement = connection
+        .prepare("SELECT node_oid, node_id, active FROM Node")
+        .unwrap();
+    let rows: Vec<(i32, String, i32)> = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!((0, "abc".to_owned(), 0), rows.first().unwrap().clone());
+    assert_eq!((1, "100".to_owned(), 1), rows.get(1).unwrap().clone());
+
+    connection
         .execute(
             "UPDATE Node SET active = 0, node_id = '0' WHERE node_oid == 0",
             [],
         )
         .unwrap();
-    let mut migrator = Migrator::init(
-        migrator.connection,
+    let migrator = Migrator::init(
+        get_connection(),
         &[schemas[1]],
         Options {
             allow_deletions: true,
@@ -147,8 +152,9 @@ fn test_data_migration() {
     )
     .unwrap();
     migrator.migrate().unwrap();
-    let mut statement = migrator
-        .connection
+
+    let connection = get_connection();
+    let mut statement = connection
         .prepare("SELECT node_oid, node_id FROM Node")
         .unwrap();
     let rows: Vec<(i32, i32)> = statement
@@ -158,6 +164,14 @@ fn test_data_migration() {
         .collect();
     assert_eq!((0, 0), rows.first().unwrap().clone());
     assert_eq!((1, 100), rows.get(1).unwrap().clone());
+}
+
+fn get_connection(name: &str) -> Connection {
+    Connection::open_with_flags(
+        format!("file:memdb{name}"),
+        OpenFlags::default() | OpenFlags::SQLITE_OPEN_MEMORY | OpenFlags::SQLITE_OPEN_SHARED_CACHE,
+    )
+    .unwrap()
 }
 
 fn dump_sqlite_master(connection: &Connection) -> Vec<SqliteMetadata> {
@@ -186,14 +200,6 @@ fn assert_schema_equal(connection: &Connection, schema: &str) {
     assert_eq!(
         dump_sqlite_master(&pristine),
         dump_sqlite_master(connection)
-    );
-    assert_eq!(
-        get_pragma::<i32>(&pristine, "user_version").unwrap(),
-        get_pragma::<i32>(connection, "user_version").unwrap()
-    );
-    assert_eq!(
-        get_pragma::<i32>(&pristine, "foreign_keys").unwrap(),
-        get_pragma::<i32>(connection, "foreign_keys").unwrap()
     );
 }
 

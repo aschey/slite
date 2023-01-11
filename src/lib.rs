@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
-use rusqlite::{types::FromSql, Connection, Params, Row, TransactionBehavior};
+use rusqlite::{types::FromSql, Connection, Params, Row, Transaction, TransactionBehavior};
 use std::{collections::HashMap, path::Path};
 use tracing::debug;
 
@@ -34,6 +34,8 @@ pub enum MigrationError {
     TransactionInitializationFailure(#[source] rusqlite::Error),
     #[error("Failed to commit transaction: {0}")]
     TransactionCommitFailure(#[source] rusqlite::Error),
+    #[error("Failed to rollback transaction: {0}")]
+    TransactionRollbackFailure(#[source] rusqlite::Error),
     #[error("Aborting migration because data loss would occur and allow_deletions is false: {0}")]
     DataLoss(String),
     #[error("The following foreign keys have constraint violations: {0:?}")]
@@ -45,7 +47,7 @@ pub enum MigrationError {
 pub struct QueryError(String, #[source] rusqlite::Error);
 
 pub struct Migrator {
-    connection: Connection,
+    connection: Option<Connection>,
     pristine: Connection,
     options: Options,
     foreign_keys_enabled: bool,
@@ -95,67 +97,47 @@ impl Migrator {
             })?;
         }
         Ok(Self {
-            connection,
+            connection: Some(connection),
             foreign_keys_enabled,
             pristine,
             options,
         })
     }
 
-    pub fn migrate(&mut self) -> Result<(), MigrationError> {
-        match self.migrate_inner() {
+    pub fn migrate(mut self) -> Result<(), MigrationError> {
+        let mut connection = self.connection.take().unwrap();
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Exclusive)
+            .map_err(MigrationError::TransactionInitializationFailure)?;
+        let migrate_result = self.migrate_inner(&tx);
+        match &migrate_result {
             Ok(changed) => {
-                let pragma = "foreign_keys";
-                migrate_pragma(
-                    &self.connection,
-                    pragma,
-                    &get_pragma::<i32>(&self.pristine, pragma)
-                        .map_err(|e| {
-                            MigrationError::QueryFailure(
-                                "Failed to retrieve foreign keys pragma".to_owned(),
-                                e,
-                            )
-                        })?
-                        .to_string(),
-                    &get_pragma::<i32>(&self.connection, pragma)
-                        .map_err(|e| {
-                            MigrationError::QueryFailure(
-                                "Failed to retrieve foreign keys pragma".to_owned(),
-                                e,
-                            )
-                        })?
-                        .to_string(),
-                )
-                .map_err(|e| {
-                    MigrationError::QueryFailure("Error updating foreign keys pragma".to_owned(), e)
-                })?;
-                if changed {
-                    execute(&self.connection, "VACUUM", []).map_err(|e| {
+                tx.commit()
+                    .map_err(MigrationError::TransactionCommitFailure)?;
+                if *changed {
+                    execute(&connection, "VACUUM", []).map_err(|e| {
                         MigrationError::QueryFailure("Failed to vacuum database".to_owned(), e)
                     })?;
                 }
             }
-            Err(e) => {
-                if self.foreign_keys_enabled {
-                    execute(&self.connection, "PRAGMA foreign_keys = ON", []).map_err(|e| {
-                        MigrationError::QueryFailure(
-                            "Failed to re-enable foreign keys".to_owned(),
-                            e,
-                        )
-                    })?;
-                    return Err(e);
-                }
+            Err(_) => {
+                tx.rollback()
+                    .map_err(MigrationError::TransactionRollbackFailure)?;
             }
         }
-        Ok(())
+
+        if self.foreign_keys_enabled {
+            execute(&connection, "PRAGMA foreign_keys = ON", []).map_err(|e| {
+                MigrationError::QueryFailure("Failed to re-enable foreign keys".to_owned(), e)
+            })?;
+        }
+
+        migrate_result.map(|_| ())
     }
 
-    fn migrate_inner(&mut self) -> Result<bool, MigrationError> {
+    fn migrate_inner(&self, tx: &Transaction) -> Result<bool, MigrationError> {
         let mut changed = false;
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Exclusive)
-            .map_err(MigrationError::TransactionInitializationFailure)?;
+
         let pristine_tables =
             select_metadata(
                 &self.pristine,
@@ -165,7 +147,7 @@ impl Migrator {
             )?;
         let tables =
             select_metadata(
-                &tx,
+                tx,
                 "SELECT name, sql from sqlite_master WHERE type = 'table' and name != 'sqlite_sequence'",
             ).map_err(
                 |e| MigrationError::QueryFailure("Failed to get tables from current database".to_owned(), e),
@@ -193,18 +175,18 @@ impl Migrator {
         let modified_tables = pristine_tables.iter().filter(|(name, sql)| {
             normalize_sql(tables.get(*name).unwrap_or(&empty)) != normalize_sql(sql)
         });
-        execute(&tx, "PRAGMA defer_foreign_keys = TRUE", []).map_err(|e| {
+        execute(tx, "PRAGMA defer_foreign_keys = TRUE", []).map_err(|e| {
             MigrationError::QueryFailure("Error enabling defer_foreign_keys".to_owned(), e)
         })?;
         for (new_table, new_table_sql) in new_tables {
             changed = true;
-            execute(&tx, new_table_sql, []).map_err(|e| {
+            execute(tx, new_table_sql, []).map_err(|e| {
                 MigrationError::QueryFailure(format!("Error creating table {new_table}"), e)
             })?;
         }
         for removed_table in removed_tables {
             changed = true;
-            execute(&tx, &format!("DROP TABLE {removed_table}"), []).map_err(|e| {
+            execute(tx, &format!("DROP TABLE {removed_table}"), []).map_err(|e| {
                 MigrationError::QueryFailure(format!("Error dropping table {removed_table}"), e)
             })?;
         }
@@ -216,11 +198,11 @@ impl Migrator {
 
             let create_temp_table_sql =
                 create_table_regex.replace_all(modified_table_sql, &temp_table);
-            execute(&tx, &create_temp_table_sql, []).map_err(|e| {
+            execute(tx, &create_temp_table_sql, []).map_err(|e| {
                 MigrationError::QueryFailure(format!("Error creating temp table {temp_table}"), e)
             })?;
 
-            let cols = get_cols(&tx, modified_table).map_err(|e| {
+            let cols = get_cols(tx, modified_table).map_err(|e| {
                 MigrationError::QueryFailure(
                     format!("Error getting columns for table {modified_table}"),
                     e,
@@ -234,9 +216,18 @@ impl Migrator {
                 )
             })?;
 
-            let has_removed_cols = cols.iter().any(|c| !pristine_cols.contains(c));
-            if !self.options.allow_deletions && has_removed_cols {
-                panic!("fix");
+            let removed_cols: Vec<&String> =
+                cols.iter().filter(|c| !pristine_cols.contains(c)).collect();
+
+            if !self.options.allow_deletions && !removed_cols.is_empty() {
+                return Err(MigrationError::DataLoss(format!(
+                    "The following columns would be dropped: {}",
+                    removed_cols
+                        .into_iter()
+                        .map(|c| c.to_owned())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
             }
             let common_cols = cols
                 .into_iter()
@@ -244,7 +235,7 @@ impl Migrator {
                 .collect::<Vec<_>>()
                 .join(",");
             execute(
-                &tx,
+                tx,
                 &format!(
                     r#"INSERT INTO {temp_table} ({common_cols})
                     SELECT {common_cols} FROM {modified_table}"#
@@ -258,12 +249,12 @@ impl Migrator {
                 )
             })?;
 
-            execute(&tx, &format!("DROP TABLE {modified_table}"), []).map_err(|e| {
+            execute(tx, &format!("DROP TABLE {modified_table}"), []).map_err(|e| {
                 MigrationError::QueryFailure(format!("Error dropping table {modified_table}"), e)
             })?;
 
             execute(
-                &tx,
+                tx,
                 &format!("ALTER TABLE {temp_table} RENAME TO {modified_table}"),
                 [],
             )
@@ -286,7 +277,7 @@ impl Migrator {
         })?;
 
         let indexes = select_metadata(
-            &tx,
+            tx,
             "SELECT name, sql FROM sqlite_master WHERE type = 'index'",
         )
         .map_err(|e| {
@@ -301,7 +292,7 @@ impl Migrator {
             .filter(|k| !pristine_indexes.contains_key(*k));
         for index in old_indexes {
             changed = true;
-            execute(&tx, &format!("DROP INDEX {index}"), []).map_err(|e| {
+            execute(tx, &format!("DROP INDEX {index}"), []).map_err(|e| {
                 MigrationError::QueryFailure(format!("Failed to drop index {index}"), e)
             })?;
         }
@@ -311,13 +302,13 @@ impl Migrator {
                 Some(old_index) if normalize_sql(&sql) != normalize_sql(old_index) => {
                     changed = true;
 
-                    execute(&tx, &format!("DROP INDEX {index_name}"), []).map_err(|e| {
+                    execute(tx, &format!("DROP INDEX {index_name}"), []).map_err(|e| {
                         MigrationError::QueryFailure(
                             format!("Error dropping index {index_name}"),
                             e,
                         )
                     })?;
-                    execute(&tx, &sql, []).map_err(|e| {
+                    execute(tx, &sql, []).map_err(|e| {
                         MigrationError::QueryFailure(
                             format!("Error creating index {index_name}"),
                             e,
@@ -326,7 +317,7 @@ impl Migrator {
                 }
                 None => {
                     changed = true;
-                    execute(&tx, &sql, []).map_err(|e| {
+                    execute(tx, &sql, []).map_err(|e| {
                         MigrationError::QueryFailure(
                             format!("Error creating index {index_name}"),
                             e,
@@ -338,30 +329,7 @@ impl Migrator {
                 }
             }
         }
-        let pragma = "user_version";
-        migrate_pragma(
-            &tx,
-            pragma,
-            &get_pragma::<i32>(&self.pristine, pragma)
-                .map_err(|e| {
-                    MigrationError::QueryFailure(
-                        "Failed to get user_version pragma from pristine database".to_owned(),
-                        e,
-                    )
-                })?
-                .to_string(),
-            &get_pragma::<i32>(&tx, pragma)
-                .map_err(|e| {
-                    MigrationError::QueryFailure(
-                        "Failed to get user_version pragma from current database".to_owned(),
-                        e,
-                    )
-                })?
-                .to_string(),
-        )
-        .map_err(|e| {
-            MigrationError::QueryFailure("Error updating user_version pragma".to_owned(), e)
-        })?;
+
         if get_pragma::<i32>(&self.pristine, "foreign_keys").map_err(|e| {
             MigrationError::QueryFailure(
                 "Failed to get foreign_keys pragma from pristine database".to_owned(),
@@ -370,7 +338,7 @@ impl Migrator {
         })? == 1
         {
             let foreign_key_violations: Vec<String> =
-                query(&tx, "PRAGMA foreign_key_check", [], |row| row.get(0)).map_err(|e| {
+                query(tx, "PRAGMA foreign_key_check", [], |row| row.get(0)).map_err(|e| {
                     MigrationError::QueryFailure("Error executing foreign key check".to_owned(), e)
                 })?;
 
@@ -378,8 +346,7 @@ impl Migrator {
                 return Err(MigrationError::ForeignKeyViolation(foreign_key_violations));
             }
         }
-        tx.commit()
-            .map_err(MigrationError::TransactionCommitFailure)?;
+
         Ok(changed)
     }
 }
@@ -440,19 +407,6 @@ fn get_pragma<T: FromSql>(connection: &Connection, pragma: &str) -> Result<T, Qu
     query_single(connection, &format!("PRAGMA {pragma}"), [], |row| {
         row.get(0)
     })
-}
-
-fn migrate_pragma(
-    connection: &Connection,
-    pragma: &str,
-    pristine_val: &str,
-    current_val: &str,
-) -> Result<(), QueryError> {
-    if current_val != pristine_val {
-        execute(connection, &format!("PRAGMA {pragma} = {pristine_val}"), [])
-    } else {
-        Ok(())
-    }
 }
 
 fn select_metadata(
