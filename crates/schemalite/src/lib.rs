@@ -2,12 +2,26 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use rusqlite::{types::FromSql, Connection, Params, Row, Transaction, TransactionBehavior};
 use std::{collections::HashMap, path::Path};
-use tracing::debug;
+use tracing::Level;
 
 macro_rules! regex {
     ($name: ident, $re: literal $(,) ?) => {
         static $name: Lazy<Regex> = Lazy::new(|| Regex::new($re).expect("Regex should compile"));
     };
+}
+
+macro_rules! event {
+    ($level:expr, $($args:tt)*) => {{
+        use ::tracing::Level;
+
+        match $level {
+            Level::ERROR => ::tracing::event!(Level::ERROR, $($args)*),
+            Level::WARN => ::tracing::event!(Level::WARN, $($args)*),
+            Level::INFO => ::tracing::event!(Level::INFO, $($args)*),
+            Level::DEBUG => ::tracing::event!(Level::DEBUG, $($args)*),
+            Level::TRACE => ::tracing::event!(Level::TRACE, $($args)*),
+        }
+    }};
 }
 
 regex!(COMMENTS_RE, r"--[^\n]*\n");
@@ -43,17 +57,21 @@ pub enum MigrationError {
 #[error("Failed to execute query {0}: {1}")]
 pub struct QueryError(String, #[source] rusqlite::Error);
 
+pub type LogFn = Box<dyn Fn(&str)>;
+
 pub struct Migrator {
     connection: Option<Connection>,
     pristine: Connection,
     options: Options,
     foreign_keys_enabled: bool,
     modified: bool,
+    on_log: Option<LogFn>,
 }
 
 #[derive(Debug, Default)]
 pub struct Options {
     pub allow_deletions: bool,
+    pub dry_run: bool,
 }
 
 impl Migrator {
@@ -95,8 +113,11 @@ impl Migrator {
         let pristine = Connection::open_in_memory()
             .map_err(|e| InitializationError::ConnectionFailure(":memory:".to_owned(), e))?;
         for definition in schema {
-            execute_batch(&pristine, definition.as_ref()).map_err(|e| {
-                InitializationError::QueryFailure("Error creating schema".to_owned(), e)
+            pristine.execute_batch(definition.as_ref()).map_err(|e| {
+                InitializationError::QueryFailure(
+                    "Error creating schema".to_owned(),
+                    QueryError(definition.as_ref().to_owned(), e),
+                )
             })?;
         }
         Ok(Self {
@@ -105,27 +126,38 @@ impl Migrator {
             pristine,
             options,
             modified: false,
+            on_log: None,
         })
     }
 
-    pub fn migrate(mut self) -> Result<(), MigrationError> {
+    pub fn migrate<F>(mut self, on_log: F) -> Result<(), MigrationError>
+    where
+        F: Fn(&str) + 'static,
+    {
+        self.on_log = Some(Box::new(on_log));
         let mut connection = self.connection.take().unwrap();
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Exclusive)
             .map_err(MigrationError::TransactionInitializationFailure)?;
+        self.log(Level::DEBUG, "Starting migration");
 
         let migrate_result = self.migrate_inner(&tx);
         match &migrate_result {
             Ok(()) => {
+                self.log(Level::DEBUG, "Committing transaction");
                 tx.commit()
                     .map_err(MigrationError::TransactionCommitFailure)?;
                 if self.modified {
+                    self.log(Level::DEBUG, "Optimizing database");
                     self.execute(&connection, "VACUUM", []).map_err(|e| {
                         MigrationError::QueryFailure("Failed to vacuum database".to_owned(), e)
                     })?;
+                } else {
+                    self.log(Level::DEBUG, "No changes detected, not optimizing database")
                 }
             }
             Err(_) => {
+                self.log(Level::WARN, "Error during migration, rolling back");
                 tx.rollback()
                     .map_err(MigrationError::TransactionRollbackFailure)?;
             }
@@ -137,7 +169,7 @@ impl Migrator {
                     MigrationError::QueryFailure("Failed to re-enable foreign keys".to_owned(), e)
                 })?;
         }
-
+        self.log(Level::INFO, "Migration completed");
         migrate_result
     }
 
@@ -163,6 +195,7 @@ impl Migrator {
             ).map_err(
                 |e| MigrationError::QueryFailure("Failed to get tables from current database".to_owned(), e),
             )?;
+
         let new_tables: HashMap<&String, &String> = pristine_tables
             .iter()
             .filter(|(k, _)| !tables.contains_key(*k))
@@ -172,6 +205,7 @@ impl Migrator {
             .keys()
             .filter(|k| !pristine_tables.contains_key(*k))
             .collect();
+
         if !removed_tables.is_empty() && !self.options.allow_deletions {
             let removed_table_list = removed_tables
                 .into_iter()
@@ -179,7 +213,7 @@ impl Migrator {
                 .collect::<Vec<_>>()
                 .join(",");
             return Err(MigrationError::DataLoss(format!(
-                "The follwoing tables would be removed: {removed_table_list}"
+                "The following tables would be removed: {removed_table_list}"
             )));
         }
         let empty = "".to_owned();
@@ -191,17 +225,20 @@ impl Migrator {
                 MigrationError::QueryFailure("Error enabling defer_foreign_keys".to_owned(), e)
             })?;
         for (new_table, new_table_sql) in new_tables {
+            self.log(Level::INFO, &format!("Creating table {new_table}"));
             self.execute(tx, new_table_sql, []).map_err(|e| {
                 MigrationError::QueryFailure(format!("Error creating table {new_table}"), e)
             })?;
         }
         for removed_table in removed_tables {
+            self.log(Level::INFO, &format!("Dropping table {removed_table}"));
             self.execute(tx, &format!("DROP TABLE {removed_table}"), [])
                 .map_err(|e| {
                     MigrationError::QueryFailure(format!("Error dropping table {removed_table}"), e)
                 })?;
         }
         for (modified_table, modified_table_sql) in modified_tables {
+            self.log(Level::INFO, &format!("Modifying table {modified_table}"));
             let temp_table = format!("{modified_table}_migration_new");
             let create_table_regex = Regex::new(&format!(r"\b{}\b", regex::escape(modified_table)))
                 .expect("Regex should compile");
@@ -244,6 +281,7 @@ impl Migrator {
                 .filter(|c| pristine_cols.contains(c))
                 .collect::<Vec<_>>()
                 .join(",");
+
             self.execute(
                 tx,
                 &format!(
@@ -279,6 +317,7 @@ impl Migrator {
                 )
             })?;
         }
+
         let pristine_indexes = select_metadata(
             &self.pristine,
             "SELECT name, sql FROM sqlite_master WHERE type = 'index'",
@@ -305,6 +344,7 @@ impl Migrator {
             .keys()
             .filter(|k| !pristine_indexes.contains_key(*k));
         for index in old_indexes {
+            self.log(Level::INFO, &format!("Dropping index {index}"));
             self.execute(tx, &format!("DROP INDEX {index}"), [])
                 .map_err(|e| {
                     MigrationError::QueryFailure(format!("Failed to drop index {index}"), e)
@@ -314,6 +354,7 @@ impl Migrator {
         for (index_name, sql) in pristine_indexes {
             match indexes.get(&index_name) {
                 Some(old_index) if normalize_sql(&sql) != normalize_sql(old_index) => {
+                    self.log(Level::INFO, &format!("Updating index {index_name}"));
                     self.execute(tx, &format!("DROP INDEX {index_name}"), [])
                         .map_err(|e| {
                             MigrationError::QueryFailure(
@@ -329,6 +370,7 @@ impl Migrator {
                     })?;
                 }
                 None => {
+                    self.log(Level::INFO, &format!("Creating index {index_name}"));
                     self.execute(tx, &sql, []).map_err(|e| {
                         MigrationError::QueryFailure(
                             format!("Error creating index {index_name}"),
@@ -336,9 +378,7 @@ impl Migrator {
                         )
                     })?;
                 }
-                _ => {
-                    debug!("Index {index_name} is unchanged, skipping");
-                }
+                _ => {}
             }
         }
 
@@ -362,25 +402,36 @@ impl Migrator {
         Ok(())
     }
 
+    fn log(&self, level: Level, message: &str) {
+        event!(level, message);
+        if let Some(on_log) = &self.on_log {
+            on_log(message);
+        }
+    }
+
     fn execute(
         &mut self,
         connection: &Connection,
         sql: &str,
         params: impl Params,
     ) -> Result<(), QueryError> {
-        debug!("Executing query: {sql}");
+        self.log(Level::INFO, &format!("Executing query:\n{sql}\n"));
+        if self.options.dry_run {
+            return Ok(());
+        }
+
         let rows = connection
             .execute(sql, params)
             .map_err(|e| QueryError(sql.to_owned(), e))?;
         let normalized = sql.trim().to_uppercase();
-        if rows > 0 && normalized.starts_with("DROP")
+        if normalized.starts_with("DROP")
             || sql.starts_with("ALTER")
             || sql.starts_with("INSERT")
             || sql.starts_with("CREATE")
         {
             self.modified = true;
         }
-        debug!("Query affected {rows} row(s)");
+        self.log(Level::INFO, &format!("Query affected {rows} row(s)"));
         Ok(())
     }
 }
@@ -394,7 +445,7 @@ fn query<T, F>(
 where
     F: FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
 {
-    debug!("Executing query: {sql}");
+    tracing::debug!("Executing query: {sql}");
     let mut statement = connection
         .prepare_cached(sql)
         .map_err(|e| QueryError(sql.to_owned(), e))?;
@@ -419,13 +470,6 @@ where
         .into_iter()
         .next()
         .expect("Query should contain one value"))
-}
-
-fn execute_batch(connection: &Connection, sql: &str) -> Result<(), QueryError> {
-    debug!("Executing query: {sql}");
-    connection
-        .execute_batch(sql)
-        .map_err(|e| QueryError(sql.to_owned(), e))
 }
 
 fn get_pragma<T: FromSql>(connection: &Connection, pragma: &str) -> Result<T, QueryError> {
