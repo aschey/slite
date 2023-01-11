@@ -11,11 +11,8 @@ macro_rules! regex {
 }
 
 regex!(COMMENTS_RE, r"--[^\n]*\n");
-
 regex!(WHITESPACE_RE, r"\s+");
-
 regex!(EXTRA_WHITESPACE_RE, r" *([(),]) *");
-
 regex!(QUOTES_RE, r#""(\w+)""#);
 
 #[derive(thiserror::Error, Debug)]
@@ -51,6 +48,7 @@ pub struct Migrator {
     pristine: Connection,
     options: Options,
     foreign_keys_enabled: bool,
+    modified: bool,
 }
 
 #[derive(Debug, Default)]
@@ -85,9 +83,14 @@ impl Migrator {
             )
         })? == 1;
         if foreign_keys_enabled {
-            execute(&connection, "PRAGMA foreign_keys = OFF", []).map_err(|e| {
-                InitializationError::QueryFailure("Failed to disable foreign keys".to_owned(), e)
-            })?
+            connection
+                .execute("PRAGMA foreign_keys = OFF", [])
+                .map_err(|e| {
+                    InitializationError::QueryFailure(
+                        "Failed to disable foreign keys".to_owned(),
+                        QueryError("PRAGMA foreign_keys = OFF".to_owned(), e),
+                    )
+                })?;
         }
         let pristine = Connection::open_in_memory()
             .map_err(|e| InitializationError::ConnectionFailure(":memory:".to_owned(), e))?;
@@ -101,6 +104,7 @@ impl Migrator {
             foreign_keys_enabled,
             pristine,
             options,
+            modified: false,
         })
     }
 
@@ -109,13 +113,14 @@ impl Migrator {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Exclusive)
             .map_err(MigrationError::TransactionInitializationFailure)?;
+
         let migrate_result = self.migrate_inner(&tx);
         match &migrate_result {
-            Ok(changed) => {
+            Ok(()) => {
                 tx.commit()
                     .map_err(MigrationError::TransactionCommitFailure)?;
-                if *changed {
-                    execute(&connection, "VACUUM", []).map_err(|e| {
+                if self.modified {
+                    self.execute(&connection, "VACUUM", []).map_err(|e| {
                         MigrationError::QueryFailure("Failed to vacuum database".to_owned(), e)
                     })?;
                 }
@@ -127,16 +132,22 @@ impl Migrator {
         }
 
         if self.foreign_keys_enabled {
-            execute(&connection, "PRAGMA foreign_keys = ON", []).map_err(|e| {
-                MigrationError::QueryFailure("Failed to re-enable foreign keys".to_owned(), e)
-            })?;
+            self.execute(&connection, "PRAGMA foreign_keys = ON", [])
+                .map_err(|e| {
+                    MigrationError::QueryFailure("Failed to re-enable foreign keys".to_owned(), e)
+                })?;
         }
 
-        migrate_result.map(|_| ())
+        migrate_result
     }
 
-    fn migrate_inner(&self, tx: &Transaction) -> Result<bool, MigrationError> {
-        let mut changed = false;
+    fn migrate_inner(&mut self, tx: &Transaction) -> Result<(), MigrationError> {
+        if self.foreign_keys_enabled {
+            self.execute(tx, "PRAGMA defer_foreign_keys = TRUE", [])
+                .map_err(|e| {
+                    MigrationError::QueryFailure("Error enabling defer_foreign_keys".to_owned(), e)
+                })?;
+        }
 
         let pristine_tables =
             select_metadata(
@@ -175,30 +186,29 @@ impl Migrator {
         let modified_tables = pristine_tables.iter().filter(|(name, sql)| {
             normalize_sql(tables.get(*name).unwrap_or(&empty)) != normalize_sql(sql)
         });
-        execute(tx, "PRAGMA defer_foreign_keys = TRUE", []).map_err(|e| {
-            MigrationError::QueryFailure("Error enabling defer_foreign_keys".to_owned(), e)
-        })?;
+        self.execute(tx, "PRAGMA defer_foreign_keys = TRUE", [])
+            .map_err(|e| {
+                MigrationError::QueryFailure("Error enabling defer_foreign_keys".to_owned(), e)
+            })?;
         for (new_table, new_table_sql) in new_tables {
-            changed = true;
-            execute(tx, new_table_sql, []).map_err(|e| {
+            self.execute(tx, new_table_sql, []).map_err(|e| {
                 MigrationError::QueryFailure(format!("Error creating table {new_table}"), e)
             })?;
         }
         for removed_table in removed_tables {
-            changed = true;
-            execute(tx, &format!("DROP TABLE {removed_table}"), []).map_err(|e| {
-                MigrationError::QueryFailure(format!("Error dropping table {removed_table}"), e)
-            })?;
+            self.execute(tx, &format!("DROP TABLE {removed_table}"), [])
+                .map_err(|e| {
+                    MigrationError::QueryFailure(format!("Error dropping table {removed_table}"), e)
+                })?;
         }
         for (modified_table, modified_table_sql) in modified_tables {
-            changed = true;
             let temp_table = format!("{modified_table}_migration_new");
             let create_table_regex = Regex::new(&format!(r"\b{}\b", regex::escape(modified_table)))
                 .expect("Regex should compile");
 
             let create_temp_table_sql =
                 create_table_regex.replace_all(modified_table_sql, &temp_table);
-            execute(tx, &create_temp_table_sql, []).map_err(|e| {
+            self.execute(tx, &create_temp_table_sql, []).map_err(|e| {
                 MigrationError::QueryFailure(format!("Error creating temp table {temp_table}"), e)
             })?;
 
@@ -234,7 +244,7 @@ impl Migrator {
                 .filter(|c| pristine_cols.contains(c))
                 .collect::<Vec<_>>()
                 .join(",");
-            execute(
+            self.execute(
                 tx,
                 &format!(
                     r#"INSERT INTO {temp_table} ({common_cols})
@@ -249,11 +259,15 @@ impl Migrator {
                 )
             })?;
 
-            execute(tx, &format!("DROP TABLE {modified_table}"), []).map_err(|e| {
-                MigrationError::QueryFailure(format!("Error dropping table {modified_table}"), e)
-            })?;
+            self.execute(tx, &format!("DROP TABLE {modified_table}"), [])
+                .map_err(|e| {
+                    MigrationError::QueryFailure(
+                        format!("Error dropping table {modified_table}"),
+                        e,
+                    )
+                })?;
 
-            execute(
+            self.execute(
                 tx,
                 &format!("ALTER TABLE {temp_table} RENAME TO {modified_table}"),
                 [],
@@ -291,24 +305,23 @@ impl Migrator {
             .keys()
             .filter(|k| !pristine_indexes.contains_key(*k));
         for index in old_indexes {
-            changed = true;
-            execute(tx, &format!("DROP INDEX {index}"), []).map_err(|e| {
-                MigrationError::QueryFailure(format!("Failed to drop index {index}"), e)
-            })?;
+            self.execute(tx, &format!("DROP INDEX {index}"), [])
+                .map_err(|e| {
+                    MigrationError::QueryFailure(format!("Failed to drop index {index}"), e)
+                })?;
         }
 
         for (index_name, sql) in pristine_indexes {
             match indexes.get(&index_name) {
                 Some(old_index) if normalize_sql(&sql) != normalize_sql(old_index) => {
-                    changed = true;
-
-                    execute(tx, &format!("DROP INDEX {index_name}"), []).map_err(|e| {
-                        MigrationError::QueryFailure(
-                            format!("Error dropping index {index_name}"),
-                            e,
-                        )
-                    })?;
-                    execute(tx, &sql, []).map_err(|e| {
+                    self.execute(tx, &format!("DROP INDEX {index_name}"), [])
+                        .map_err(|e| {
+                            MigrationError::QueryFailure(
+                                format!("Error dropping index {index_name}"),
+                                e,
+                            )
+                        })?;
+                    self.execute(tx, &sql, []).map_err(|e| {
                         MigrationError::QueryFailure(
                             format!("Error creating index {index_name}"),
                             e,
@@ -316,8 +329,7 @@ impl Migrator {
                     })?;
                 }
                 None => {
-                    changed = true;
-                    execute(tx, &sql, []).map_err(|e| {
+                    self.execute(tx, &sql, []).map_err(|e| {
                         MigrationError::QueryFailure(
                             format!("Error creating index {index_name}"),
                             e,
@@ -347,7 +359,29 @@ impl Migrator {
             }
         }
 
-        Ok(changed)
+        Ok(())
+    }
+
+    fn execute(
+        &mut self,
+        connection: &Connection,
+        sql: &str,
+        params: impl Params,
+    ) -> Result<(), QueryError> {
+        debug!("Executing query: {sql}");
+        let rows = connection
+            .execute(sql, params)
+            .map_err(|e| QueryError(sql.to_owned(), e))?;
+        let normalized = sql.trim().to_uppercase();
+        if rows > 0 && normalized.starts_with("DROP")
+            || sql.starts_with("ALTER")
+            || sql.starts_with("INSERT")
+            || sql.starts_with("CREATE")
+        {
+            self.modified = true;
+        }
+        debug!("Query affected {rows} row(s)");
+        Ok(())
     }
 }
 
@@ -385,15 +419,6 @@ where
         .into_iter()
         .next()
         .expect("Query should contain one value"))
-}
-
-fn execute(connection: &Connection, sql: &str, params: impl Params) -> Result<(), QueryError> {
-    debug!("Executing query: {sql}");
-    let rows = connection
-        .execute(sql, params)
-        .map_err(|e| QueryError(sql.to_owned(), e))?;
-    debug!("Query affected {rows} row(s)");
-    Ok(())
 }
 
 fn execute_batch(connection: &Connection, sql: &str) -> Result<(), QueryError> {
@@ -434,6 +459,7 @@ fn normalize_sql(sql: &str) -> String {
     let sql = QUOTES_RE.replace_all(&sql, r"$1");
     sql.trim().to_owned()
 }
+
 #[cfg(test)]
 #[path = "./lib_test.rs"]
 mod lib_test;
