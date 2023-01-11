@@ -1,7 +1,6 @@
+use crate::{get_pragma, normalize_sql, Migrator, Options};
 use rstest::rstest;
 use rusqlite::Connection;
-
-use crate::{get_pragma, normalize_sql, Migrator, Options};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct SqliteMetadata {
@@ -18,22 +17,21 @@ fn test_schema_migration(#[values(0, 1, 2, 3, 4)] from: usize, #[values(0, 1, 2,
         (from, to),
         (1, 0) | (2, 0) | (2, 1) | (2, 3) | (2, 4) | (3, 0) | (3, 1) | (4, 0) | (4, 1)
     );
-
     let connection = Connection::open_in_memory().unwrap();
     connection.execute_batch(schemas[from]).unwrap();
+
     // let migrator = Migrator::init(connection, &[schemas[to]], Options::default());
     if need_allow_deletions {
-        // test error
-        // assert_schema_equal(&migrator.connection, schemas[from])
+        // test error assert_schema_equal(&migrator.connection, schemas[from])
     }
-
     let mut migrator = Migrator::init(
         connection,
         &[schemas[to]],
         Options {
             allow_deletions: need_allow_deletions,
         },
-    );
+    )
+    .unwrap();
     migrator.migrate().unwrap();
     assert_schema_equal(&migrator.connection, schemas[to]);
 }
@@ -50,8 +48,7 @@ fn test_data_migration() {
         insert_statement.execute([0, 0]).unwrap();
         insert_statement.execute([1, 100]).unwrap();
     }
-
-    let mut migrator = Migrator::init(connection, &[schemas[2]], Options::default());
+    let mut migrator = Migrator::init(connection, &[schemas[2]], Options::default()).unwrap();
     migrator.migrate().unwrap();
     {
         let mut select_statement = migrator
@@ -65,7 +62,6 @@ fn test_data_migration() {
             .collect();
         assert_eq!((0, "0".to_owned(), 1), results.first().unwrap().clone());
         assert_eq!((1, "100".to_owned(), 1), results.get(1).unwrap().clone());
-
         migrator
             .connection
             .execute(
@@ -85,26 +81,24 @@ fn test_data_migration() {
             .connection
             .prepare("SELECT node_id, id FROM Job INNER JOIN Node ON Node.node_oid == Job.node_oid")
             .unwrap();
-
         let rows: Vec<(String, i32)> = select_statement
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-
         assert_eq!(("abc".to_owned(), 1234), rows.first().unwrap().clone());
         assert_eq!(("abc".to_owned(), 5432), rows.get(1).unwrap().clone());
         assert_eq!(("100".to_owned(), 1234), rows.get(2).unwrap().clone());
         assert_eq!(("100".to_owned(), 9876), rows.get(3).unwrap().clone());
     }
-
     let mut migrator = Migrator::init(
         migrator.connection,
         &[schemas[3]],
         Options {
             allow_deletions: true,
         },
-    );
+    )
+    .unwrap();
     migrator.migrate().unwrap();
     {
         let mut statement = migrator
@@ -116,14 +110,13 @@ fn test_data_migration() {
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-
         assert_eq!(("abc".to_owned(), 1234), rows.first().unwrap().clone());
         assert_eq!(("abc".to_owned(), 5432), rows.get(1).unwrap().clone());
         assert_eq!(("100".to_owned(), 1234), rows.get(2).unwrap().clone());
         assert_eq!(("100".to_owned(), 9876), rows.get(3).unwrap().clone());
     }
-
-    let mut migrator = Migrator::init(migrator.connection, &[schemas[4]], Options::default());
+    let mut migrator =
+        Migrator::init(migrator.connection, &[schemas[4]], Options::default()).unwrap();
     migrator.migrate().unwrap();
     {
         let mut statement = migrator
@@ -135,11 +128,9 @@ fn test_data_migration() {
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-
         assert_eq!((0, "abc".to_owned(), 0), rows.first().unwrap().clone());
         assert_eq!((1, "100".to_owned(), 1), rows.get(1).unwrap().clone());
     }
-
     migrator
         .connection
         .execute(
@@ -153,7 +144,8 @@ fn test_data_migration() {
         Options {
             allow_deletions: true,
         },
-    );
+    )
+    .unwrap();
     migrator.migrate().unwrap();
     let mut statement = migrator
         .connection
@@ -191,19 +183,17 @@ fn dump_sqlite_master(connection: &Connection) -> Vec<SqliteMetadata> {
 fn assert_schema_equal(connection: &Connection, schema: &str) {
     let pristine = Connection::open_in_memory().unwrap();
     pristine.execute_batch(schema).unwrap();
-
     assert_eq!(
         dump_sqlite_master(&pristine),
         dump_sqlite_master(connection)
     );
-
     assert_eq!(
-        get_pragma::<i32>(&pristine, "user_version"),
-        get_pragma::<i32>(connection, "user_version")
+        get_pragma::<i32>(&pristine, "user_version").unwrap(),
+        get_pragma::<i32>(connection, "user_version").unwrap()
     );
     assert_eq!(
-        get_pragma::<i32>(&pristine, "foreign_keys"),
-        get_pragma::<i32>(connection, "foreign_keys")
+        get_pragma::<i32>(&pristine, "foreign_keys").unwrap(),
+        get_pragma::<i32>(connection, "foreign_keys").unwrap()
     );
 }
 
