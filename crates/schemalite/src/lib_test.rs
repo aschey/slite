@@ -25,12 +25,12 @@ fn test_schema_migration(#[values(0, 1, 2, 3, 4)] from: usize, #[values(0, 1, 2,
         let connection = get_connection(&format!("{from}{to}error"));
         let connection2 = get_connection(&format!("{from}{to}error"));
         connection.execute_batch(schemas[from]).unwrap();
-        let migrator = Migrator::init(connection, &[schemas[to]], Options::default()).unwrap();
-        let result = migrator.migrate(|_| {});
+        let migrator = Migrator::new(connection, &[schemas[to]], Options::default()).unwrap();
+        let result = migrator.migrate();
         assert!(matches!(result, Err(MigrationError::DataLoss(_))));
         assert_schema_equal(&connection2, schemas[from]);
     }
-    let migrator = Migrator::init(
+    let migrator = Migrator::new(
         connection,
         &[schemas[to]],
         Options {
@@ -39,7 +39,7 @@ fn test_schema_migration(#[values(0, 1, 2, 3, 4)] from: usize, #[values(0, 1, 2,
         },
     )
     .unwrap();
-    migrator.migrate(|_| {}).unwrap();
+    migrator.migrate().unwrap();
     assert_schema_equal(&connection2, schemas[to]);
 }
 
@@ -58,8 +58,8 @@ fn test_data_migration() {
     statement.execute([0, 0]).unwrap();
     statement.execute([1, 100]).unwrap();
 
-    let migrator = Migrator::init(get_connection(), &[schemas[2]], Options::default()).unwrap();
-    migrator.migrate(|_| {}).unwrap();
+    let migrator = Migrator::new(get_connection(), &[schemas[2]], Options::default()).unwrap();
+    migrator.migrate().unwrap();
     let connection = get_connection();
 
     let mut statement = connection
@@ -99,7 +99,7 @@ fn test_data_migration() {
     assert_eq!(("100".to_owned(), 1234), rows.get(2).unwrap().clone());
     assert_eq!(("100".to_owned(), 9876), rows.get(3).unwrap().clone());
 
-    let migrator = Migrator::init(
+    let migrator = Migrator::new(
         get_connection(),
         &[schemas[3]],
         Options {
@@ -108,7 +108,7 @@ fn test_data_migration() {
         },
     )
     .unwrap();
-    migrator.migrate(|_| {}).unwrap();
+    migrator.migrate().unwrap();
     let connection = get_connection();
 
     let mut statement = connection
@@ -124,8 +124,8 @@ fn test_data_migration() {
     assert_eq!(("100".to_owned(), 1234), rows.get(2).unwrap().clone());
     assert_eq!(("100".to_owned(), 9876), rows.get(3).unwrap().clone());
 
-    let migrator = Migrator::init(get_connection(), &[schemas[4]], Options::default()).unwrap();
-    migrator.migrate(|_| {}).unwrap();
+    let migrator = Migrator::new(get_connection(), &[schemas[4]], Options::default()).unwrap();
+    migrator.migrate().unwrap();
 
     let mut statement = connection
         .prepare("SELECT node_oid, node_id, active FROM Node")
@@ -144,7 +144,7 @@ fn test_data_migration() {
             [],
         )
         .unwrap();
-    let migrator = Migrator::init(
+    let migrator = Migrator::new(
         get_connection(),
         &[schemas[1]],
         Options {
@@ -153,7 +153,7 @@ fn test_data_migration() {
         },
     )
     .unwrap();
-    migrator.migrate(|_| {}).unwrap();
+    migrator.migrate().unwrap();
 
     let connection = get_connection();
     let mut statement = connection
