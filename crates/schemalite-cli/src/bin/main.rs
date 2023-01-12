@@ -26,6 +26,7 @@ fn main() {
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
     let subscriber = tracing_subscriber::fmt()
         .with_writer(non_blocking)
+        .pretty()
         .with_max_level(Level::DEBUG);
     tracing::subscriber::with_default(subscriber.finish(), || {
         let migrator = Migrator::new(

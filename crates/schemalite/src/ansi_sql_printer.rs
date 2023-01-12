@@ -22,9 +22,7 @@ impl Default for SqlPrinter {
             syntect::dumps::from_binary(include_bytes!("../assets/themes.themedump"))
         });
         let theme = themes.themes.get("ansi").unwrap();
-
         let sql_syntax = syntax_set.find_syntax_by_name("SQL").unwrap().to_owned();
-
         let highlighter = syntect::easy::HighlightLines::new(&sql_syntax, theme);
 
         Self { highlighter }

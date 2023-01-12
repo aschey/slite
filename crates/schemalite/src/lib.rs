@@ -11,7 +11,10 @@ use default_sql_printer::SqlPrinter;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use rusqlite::{types::FromSql, Connection, Params, Row, Transaction, TransactionBehavior};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+};
 use tracing::{debug, info, warn};
 
 macro_rules! regex {
@@ -268,8 +271,7 @@ impl Migrator {
             self.execute(
                 tx,
                 &format!(
-                    r#"INSERT INTO {temp_table} ({common_cols})
-                    SELECT {common_cols} FROM {modified_table}"#
+                    "INSERT INTO {temp_table} ({common_cols}) SELECT {common_cols} FROM {modified_table}"
                 ),
                 [],
             )
@@ -379,7 +381,6 @@ impl Migrator {
             let foreign_key_violations: Vec<String> = query(
                 tx,
                 "PRAGMA foreign_key_check",
-                [],
                 &mut self.sql_printer,
                 |row| row.get(0),
             )
@@ -401,7 +402,10 @@ impl Migrator {
         sql: &str,
         params: impl Params,
     ) -> Result<(), QueryError> {
-        info!("Executing query:\n{}\n", self.sql_printer.print(sql));
+        info!(
+            "{}",
+            format_query_log(connection, sql, &mut self.sql_printer)
+        );
         if self.options.dry_run {
             return Ok(());
         }
@@ -422,17 +426,27 @@ impl Migrator {
     }
 }
 
-fn query<T, F>(
+fn query_params<T, P, F>(
     connection: &Connection,
     sql: &str,
-    params: impl Params,
+    params: P,
     sql_printer: &mut SqlPrinter,
     f: F,
 ) -> Result<Vec<T>, QueryError>
 where
+    P: Params + Clone + IntoIterator + Default,
+    P::Item: Display,
     F: FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
 {
-    tracing::debug!("Executing query:\n{}", sql_printer.print(sql));
+    let mut formatted_sql = sql.to_owned();
+    for (i, param) in params.clone().into_iter().enumerate() {
+        formatted_sql = formatted_sql.replace(&format!("?{}", i + 1), &format!("{param}"));
+    }
+    debug!(
+        "{}",
+        format_query_log(connection, &formatted_sql, sql_printer)
+    );
+
     let mut statement = connection
         .prepare_cached(sql)
         .map_err(|e| QueryError(sql.to_owned(), e))?;
@@ -443,17 +457,47 @@ where
     results.map_err(|e| QueryError(sql.to_owned(), e))
 }
 
+fn format_query_log(connection: &Connection, sql: &str, sql_printer: &mut SqlPrinter) -> String {
+    format!(
+        "Executing query on database {}\n\t{}",
+        connection
+            .path()
+            .map(|c| c.to_string_lossy().to_string())
+            .unwrap_or_else(|| "unknown".to_owned()),
+        sql_printer.print(sql)
+    )
+}
+
+fn query<T, F>(
+    connection: &Connection,
+    sql: &str,
+    sql_printer: &mut SqlPrinter,
+    f: F,
+) -> Result<Vec<T>, QueryError>
+where
+    F: FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
+{
+    info!("{}", format_query_log(connection, sql, sql_printer));
+    let mut statement = connection
+        .prepare_cached(sql)
+        .map_err(|e| QueryError(sql.to_owned(), e))?;
+    let results: Result<Vec<T>, rusqlite::Error> = statement
+        .query_map([], f)
+        .map_err(|e| QueryError(sql.to_owned(), e))?
+        .collect();
+    results.map_err(|e| QueryError(sql.to_owned(), e))
+}
+
 fn query_single<T, F>(
     connection: &Connection,
     sql: &str,
-    params: impl Params,
     sql_printer: &mut SqlPrinter,
     f: F,
 ) -> Result<T, QueryError>
 where
     F: FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
 {
-    let results = query(connection, sql, params, sql_printer, f)?;
+    let results = query(connection, sql, sql_printer, f)?;
     Ok(results
         .into_iter()
         .next()
@@ -468,7 +512,6 @@ fn get_pragma<T: FromSql>(
     query_single(
         connection,
         &format!("PRAGMA {pragma}"),
-        [],
         sql_printer,
         |row| row.get(0),
     )
@@ -479,7 +522,7 @@ fn select_metadata(
     sql: &str,
     sql_printer: &mut SqlPrinter,
 ) -> Result<HashMap<String, String>, QueryError> {
-    let results = query::<(String, String), _>(connection, sql, [], sql_printer, |row| {
+    let results = query::<(String, String), _>(connection, sql, sql_printer, |row| {
         Ok((row.get(0)?, row.get(1)?))
     })?;
     Ok(HashMap::from_iter(results))
@@ -490,7 +533,7 @@ fn get_cols(
     table: &str,
     sql_printer: &mut SqlPrinter,
 ) -> Result<Vec<String>, QueryError> {
-    query(
+    query_params(
         connection,
         "SELECT name FROM pragma_table_info(?1)",
         [table],
