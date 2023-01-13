@@ -13,7 +13,7 @@ path = "src/bin/main.rs"
 [dependencies]
 clap = {version = "4.0.32", features = ["derive"]}
 rusqlite = {version = "0.28.0", features = ["bundled"]}
-schemalite = {path = "../schemalite", features = ["pretty-print"]}
+schemalite = {path = "../schemalite", features = ["pretty-print", "diff"]}
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
 tracing-tree = {git = "https://github.com/aschey/tracing-tree", rev = "f81502acc9bc1e2baea22386896e7ee15e15c924"}

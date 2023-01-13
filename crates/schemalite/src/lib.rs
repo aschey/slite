@@ -10,6 +10,7 @@ mod default_sql_printer;
 use connection::{Metadata, PristineConnection, TargetConnection};
 #[cfg(not(feature = "pretty-print"))]
 pub use default_sql_printer::SqlPrinter;
+use imara_diff::{diff, intern::InternedInput, Algorithm, UnifiedDiffBuilder};
 
 mod connection;
 
@@ -376,6 +377,34 @@ impl Migrator {
             target: self.pristine.parse_metadata()?,
             source: self.connection.borrow_mut().parse_metadata()?,
         })
+    }
+
+    pub fn diff(&mut self) -> String {
+        let metadata = self.parse_metadata().unwrap();
+
+        let mut source_tables: Vec<&String> = metadata.source.tables.keys().collect();
+        let mut target_tables: Vec<&String> = metadata.target.tables.keys().collect();
+        source_tables.sort();
+        target_tables.sort();
+
+        let mut source_table_str = "".to_owned();
+        let mut target_table_str = "".to_owned();
+
+        for table in source_tables {
+            source_table_str.push_str(metadata.source.tables.get(table).unwrap());
+            source_table_str.push('\n');
+        }
+        for table in target_tables {
+            target_table_str.push_str(metadata.target.tables.get(table).unwrap());
+            target_table_str.push('\n');
+        }
+
+        let input = InternedInput::new(source_table_str.as_str(), target_table_str.as_str());
+        diff(
+            Algorithm::Histogram,
+            &input,
+            UnifiedDiffBuilder::new(&input),
+        )
     }
 }
 

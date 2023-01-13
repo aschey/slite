@@ -31,6 +31,7 @@ enum SchemaType {
 enum CliOptions {
     Migrate,
     DryRun,
+    Diff,
     PrintSchema { from: SchemaType },
 }
 
@@ -108,6 +109,18 @@ fn main() {
             for (_, sql) in source.indexes {
                 println!("{}", sql_printer.print(&sql));
             }
+        }
+        CliOptions::Diff => {
+            let mut migrator = Migrator::new(
+                source_db,
+                &[schemas()[2]],
+                Options {
+                    allow_deletions: true,
+                    dry_run: true,
+                },
+            )
+            .unwrap();
+            println!("{}", migrator.diff());
         }
     }
 }
