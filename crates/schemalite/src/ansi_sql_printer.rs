@@ -30,7 +30,7 @@ impl Default for SqlPrinter {
 }
 
 impl SqlPrinter {
-    pub fn print(&mut self, sql: &str) -> String {
+    pub fn print(&mut self, sql: &str, background: Option<AnsiColors>) -> String {
         sql.split('\n')
             .map(|line| {
                 let line = format!("{}\n", line);
@@ -39,14 +39,14 @@ impl SqlPrinter {
                     .highlight_line(&line, SYNTAXES.get().unwrap())
                     .unwrap();
 
-                as_terminal_escaped(&regions[..])
+                as_terminal_escaped(&regions[..], background)
             })
             .collect::<Vec<_>>()
             .join("")
     }
 }
 
-fn as_terminal_escaped(v: &[(Style, &str)]) -> String {
+fn as_terminal_escaped(v: &[(Style, &str)], background: Option<AnsiColors>) -> String {
     let mut s: String = String::new();
     for &(ref style, text) in v.iter() {
         if style.foreground.a == 0 {
@@ -69,19 +69,42 @@ fn as_terminal_escaped(v: &[(Style, &str)]) -> String {
                 0x0F => AnsiColors::BrightWhite,
                 _ => AnsiColors::White,
             };
-            s.push_str(&text.color(color).to_string());
+            let colored = match background {
+                Some(background) => text.color(color).on_color(background).to_string(),
+                None => text.color(color).to_string(),
+            };
+            s.push_str(&colored);
         } else if style.foreground.a == 1 {
-            s.push_str(text);
+            let ends_with_newline = text.ends_with('\n');
+            let text = text.replace('\n', "");
+            let mut text = match background {
+                Some(background) => text.on_color(background).to_string(),
+                None => text.to_owned(),
+            };
+            if ends_with_newline {
+                text.push('\n');
+            }
+            s.push_str(&text);
         } else {
-            s.push_str(
-                &text
+            let colored = match background {
+                Some(background) => text
+                    .color(owo_colors::Rgb(
+                        style.foreground.r,
+                        style.foreground.g,
+                        style.foreground.b,
+                    ))
+                    .on_color(background)
+                    .to_string(),
+                None => text
                     .color(owo_colors::Rgb(
                         style.foreground.r,
                         style.foreground.g,
                         style.foreground.b,
                     ))
                     .to_string(),
-            );
+            };
+
+            s.push_str(&colored);
         }
     }
 

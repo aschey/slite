@@ -6,11 +6,12 @@ pub use ansi_sql_printer::SqlPrinter;
 
 #[cfg(not(feature = "pretty-print"))]
 mod default_sql_printer;
-
+mod unified_diff_builder;
 use connection::{Metadata, PristineConnection, TargetConnection};
 #[cfg(not(feature = "pretty-print"))]
 pub use default_sql_printer::SqlPrinter;
-use imara_diff::{diff, intern::InternedInput, Algorithm, UnifiedDiffBuilder};
+use imara_diff::{diff, intern::InternedInput, Algorithm};
+use unified_diff_builder::UnifiedDiffBuilder;
 
 mod connection;
 

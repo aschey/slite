@@ -38,7 +38,7 @@ impl PristineConnection {
         let init_span = span!(Level::TRACE, "Initializing schema in reference database");
         let _guard = init_span.entered();
         for definition in schema {
-            trace!("\n\t{}", self.sql_printer.print(definition.as_ref()));
+            trace!("\n\t{}", self.sql_printer.print(definition.as_ref(), None));
             self.connection
                 .execute_batch(definition.as_ref())
                 .map_err(|e| {
@@ -101,7 +101,7 @@ impl<'conn> TargetTransaction<'conn> {
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<(), QueryError> {
-        debug!("\n\t{}", self.sql_printer.print(sql));
+        debug!("\n\t{}", self.sql_printer.print(sql, None));
 
         let rows = self
             .transaction
@@ -179,7 +179,7 @@ impl TargetConnection {
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<(), QueryError> {
-        debug!("\n\t{}", self.sql_printer.print(sql));
+        debug!("\n\t{}", self.sql_printer.print(sql, None));
 
         let rows = self
             .connection
@@ -242,7 +242,7 @@ where
         log_level,
         "{}\n\t{}",
         msg,
-        sql_printer.print(&replace_sql_params(sql, params.clone()))
+        sql_printer.print(&replace_sql_params(sql, params.clone()), None)
     );
 
     let mut statement = connection
@@ -283,7 +283,7 @@ fn query<T, F>(
 where
     F: FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
 {
-    event!(log_level, "{}\n\t{}", msg, sql_printer.print(sql));
+    event!(log_level, "{}\n\t{}", msg, sql_printer.print(sql, None));
 
     let mut statement = connection
         .prepare_cached(sql)
