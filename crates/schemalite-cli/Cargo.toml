@@ -15,5 +15,5 @@ clap = {version = "4.0.32", features = ["derive"]}
 rusqlite = {version = "0.28.0", features = ["bundled"]}
 schemalite = {path = "../schemalite", features = ["pretty-print"]}
 tracing = "0.1.37"
-tracing-appender = "0.2.2"
 tracing-subscriber = "0.3.16"
+tracing-tree = {path = "../../../tracing-tree"}

@@ -1,6 +1,10 @@
 use rusqlite::{Connection, OpenFlags};
 use schemalite::{Migrator, Options};
-use tracing::Level;
+use tracing::metadata::LevelFilter;
+use tracing_subscriber::{
+    prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer, Registry,
+};
+use tracing_tree::HierarchicalLayer;
 
 struct MemoryWriter;
 
@@ -23,24 +27,24 @@ fn main() {
     )
     .unwrap();
     source_db.execute_batch(schemas()[1]).unwrap();
-    let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(non_blocking)
-        .pretty()
-        .with_max_level(Level::DEBUG);
-    tracing::subscriber::with_default(subscriber.finish(), || {
-        let migrator = Migrator::new(
-            source_db,
-            &[schemas()[2]],
-            Options {
-                allow_deletions: true,
-                dry_run: false,
-            },
+    Registry::default()
+        .with(
+            HierarchicalLayer::default()
+                .with_indent_lines(true)
+                .with_level(false)
+                .with_filter(LevelFilter::INFO),
         )
-        .unwrap();
-        migrator.migrate().unwrap();
-        drop(_guard);
-    });
+        .init();
+    let migrator = Migrator::new(
+        source_db,
+        &[schemas()[2]],
+        Options {
+            allow_deletions: true,
+            dry_run: false,
+        },
+    )
+    .unwrap();
+    migrator.migrate().unwrap();
 }
 
 fn schemas() -> [&'static str; 6] {
