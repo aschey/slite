@@ -7,7 +7,7 @@ pub(crate) use ansi_sql_printer::SqlPrinter;
 #[cfg(not(feature = "pretty-print"))]
 mod default_sql_printer;
 
-use connection::{PristineConnection, TargetConnection};
+use connection::{Metadata, PristineConnection, TargetConnection};
 #[cfg(not(feature = "pretty-print"))]
 pub(crate) use default_sql_printer::SqlPrinter;
 
@@ -152,30 +152,24 @@ impl Migrator {
         }
         let table_span = span!(Level::INFO, "Migrating tables");
         let _table_guard = table_span.entered();
-        let pristine_tables =
-            self
-                .pristine
-                .select_metadata(
-                    "SELECT name, sql from sqlite_master WHERE type = 'table' and name != 'sqlite_sequence'",
-                )
-                .map_err(
-                    |e| MigrationError::QueryFailure("Failed to get tables from pristine database".to_owned(), e),
-                )?;
-        let tables =
-            tx
-                .select_metadata(
-                    "SELECT name, sql from sqlite_master WHERE type = 'table' and name != 'sqlite_sequence'",
-                )
-                .map_err(
-                    |e| MigrationError::QueryFailure("Failed to get tables from current database".to_owned(), e),
-                )?;
-        let new_tables: HashMap<&String, &String> = pristine_tables
+        let pristine_metadata = self.pristine.parse_metadata().map_err(|e| {
+            MigrationError::QueryFailure(
+                "Failed to get tables from pristine database".to_owned(),
+                e,
+            )
+        })?;
+        let metadata = tx.parse_metadata().map_err(|e| {
+            MigrationError::QueryFailure("Failed to get tables from current database".to_owned(), e)
+        })?;
+        let new_tables: HashMap<&String, &String> = pristine_metadata
+            .tables
             .iter()
-            .filter(|(k, _)| !tables.contains_key(*k))
+            .filter(|(k, _)| !metadata.tables.contains_key(*k))
             .collect();
-        let removed_tables: Vec<&String> = tables
+        let removed_tables: Vec<&String> = metadata
+            .tables
             .keys()
-            .filter(|k| !pristine_tables.contains_key(*k))
+            .filter(|k| !pristine_metadata.tables.contains_key(*k))
             .collect();
 
         if !removed_tables.is_empty() && !self.options.allow_deletions {
@@ -190,10 +184,11 @@ impl Migrator {
         }
 
         let empty = "".to_owned();
-        let modified_tables: HashMap<&String, &String> = pristine_tables
+        let modified_tables: HashMap<&String, &String> = pristine_metadata
+            .tables
             .iter()
             .filter(|(name, sql)| {
-                normalize_sql(tables.get(*name).unwrap_or(&empty)) != normalize_sql(sql)
+                normalize_sql(metadata.tables.get(*name).unwrap_or(&empty)) != normalize_sql(sql)
             })
             .collect();
         tx.execute("PRAGMA defer_foreign_keys = TRUE")
@@ -301,34 +296,19 @@ impl Migrator {
 
         let index_span = span!(Level::INFO, "Migrating indexes");
         let _index_guard = index_span.entered();
-        let pristine_indexes = self
-            .pristine
-            .select_metadata("SELECT name, sql FROM sqlite_master WHERE type = 'index'")
-            .map_err(|e| {
-                MigrationError::QueryFailure(
-                    "Failed to get indexes from pristine database".to_owned(),
-                    e,
-                )
-            })?;
-        let indexes = tx
-            .select_metadata("SELECT name, sql FROM sqlite_master WHERE type = 'index'")
-            .map_err(|e| {
-                MigrationError::QueryFailure(
-                    "Failed to get indexes from current database".to_owned(),
-                    e,
-                )
-            })?;
-        let old_indexes = indexes
+
+        let old_indexes = metadata
+            .indexes
             .keys()
-            .filter(|k| !pristine_indexes.contains_key(*k));
+            .filter(|k| !pristine_metadata.indexes.contains_key(*k));
         for index in old_indexes {
             info!("Dropping index {index}");
             tx.execute(&format!("DROP INDEX {index}")).map_err(|e| {
                 MigrationError::QueryFailure(format!("Failed to drop index {index}"), e)
             })?;
         }
-        for (index_name, sql) in pristine_indexes {
-            match indexes.get(&index_name) {
+        for (index_name, sql) in pristine_metadata.indexes {
+            match metadata.indexes.get(&index_name) {
                 Some(old_index) if normalize_sql(&sql) != normalize_sql(old_index) => {
                     info!("Updating index {index_name}");
                     tx.execute(&format!("DROP INDEX {index_name}"))
@@ -380,6 +360,18 @@ impl Migrator {
         }
         Ok(())
     }
+
+    pub fn parse_metadata(&mut self) -> Result<MigrationMetadata, QueryError> {
+        Ok(MigrationMetadata {
+            target: self.pristine.parse_metadata()?,
+            source: self.connection.borrow_mut().parse_metadata()?,
+        })
+    }
+}
+
+pub struct MigrationMetadata {
+    pub source: Metadata,
+    pub target: Metadata,
 }
 
 fn normalize_sql(sql: &str) -> String {

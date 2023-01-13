@@ -61,10 +61,9 @@ impl PristineConnection {
         )
     }
 
-    pub fn select_metadata(&mut self, sql: &str) -> Result<HashMap<String, String>, QueryError> {
-        select_metadata(
+    pub fn parse_metadata(&mut self) -> Result<Metadata, QueryError> {
+        parse_metadata(
             &self.connection,
-            sql,
             Level::TRACE,
             "Executing query against reference database",
             &mut self.sql_printer,
@@ -123,14 +122,8 @@ impl<'conn> TargetTransaction<'conn> {
         Ok(())
     }
 
-    pub fn select_metadata(&mut self, sql: &str) -> Result<HashMap<String, String>, QueryError> {
-        select_metadata(
-            &self.transaction,
-            sql,
-            Level::DEBUG,
-            "",
-            &mut self.sql_printer,
-        )
+    pub fn parse_metadata(&mut self) -> Result<Metadata, QueryError> {
+        parse_metadata(&self.transaction, Level::DEBUG, "", &mut self.sql_printer)
     }
 
     pub fn query<T, F>(&mut self, sql: &str, f: F) -> Result<Vec<T>, QueryError>
@@ -212,6 +205,10 @@ impl TargetConnection {
             "",
             &mut self.sql_printer,
         )
+    }
+
+    pub fn parse_metadata(&mut self) -> Result<Metadata, QueryError> {
+        parse_metadata(&self.connection, Level::DEBUG, "", &mut self.sql_printer)
     }
 }
 
@@ -328,6 +325,35 @@ fn select_metadata(
             Ok((row.get(0)?, row.get(1)?))
         })?;
     Ok(HashMap::from_iter(results))
+}
+
+pub struct Metadata {
+    pub tables: HashMap<String, String>,
+    pub indexes: HashMap<String, String>,
+}
+
+fn parse_metadata(
+    connection: &Connection,
+    log_level: Level,
+    msg: &str,
+    sql_printer: &mut SqlPrinter,
+) -> Result<Metadata, QueryError> {
+    let tables = select_metadata(
+        connection,
+        "SELECT name, sql from sqlite_master WHERE type = 'table' and name != 'sqlite_sequence'",
+        log_level,
+        msg,
+        sql_printer,
+    )?;
+
+    let indexes = select_metadata(
+        connection,
+        "SELECT name, sql from sqlite_master WHERE type = 'index' and name != 'sqlite_sequence'",
+        log_level,
+        msg,
+        sql_printer,
+    )?;
+    Ok(Metadata { tables, indexes })
 }
 
 fn get_cols(
