@@ -2,14 +2,14 @@
 mod ansi_sql_printer;
 
 #[cfg(feature = "pretty-print")]
-pub(crate) use ansi_sql_printer::SqlPrinter;
+pub use ansi_sql_printer::SqlPrinter;
 
 #[cfg(not(feature = "pretty-print"))]
 mod default_sql_printer;
 
 use connection::{Metadata, PristineConnection, TargetConnection};
 #[cfg(not(feature = "pretty-print"))]
-pub(crate) use default_sql_printer::SqlPrinter;
+pub use default_sql_printer::SqlPrinter;
 
 mod connection;
 
@@ -154,12 +154,15 @@ impl Migrator {
         let _table_guard = table_span.entered();
         let pristine_metadata = self.pristine.parse_metadata().map_err(|e| {
             MigrationError::QueryFailure(
-                "Failed to get tables from pristine database".to_owned(),
+                "Failed to get metadata from pristine database".to_owned(),
                 e,
             )
         })?;
         let metadata = tx.parse_metadata().map_err(|e| {
-            MigrationError::QueryFailure("Failed to get tables from current database".to_owned(), e)
+            MigrationError::QueryFailure(
+                "Failed to get metadata from current database".to_owned(),
+                e,
+            )
         })?;
         let new_tables: HashMap<&String, &String> = pristine_metadata
             .tables
@@ -296,6 +299,13 @@ impl Migrator {
 
         let index_span = span!(Level::INFO, "Migrating indexes");
         let _index_guard = index_span.entered();
+
+        let metadata = tx.parse_metadata().map_err(|e| {
+            MigrationError::QueryFailure(
+                "Failed to get metadata from current database".to_owned(),
+                e,
+            )
+        })?;
 
         let old_indexes = metadata
             .indexes

@@ -8,7 +8,7 @@ use syntect::{
 static SYNTAXES: OnceCell<SyntaxSet> = OnceCell::new();
 static THEMES: OnceCell<ThemeSet> = OnceCell::new();
 
-pub(crate) struct SqlPrinter {
+pub struct SqlPrinter {
     highlighter: syntect::easy::HighlightLines<'static>,
 }
 

@@ -17,3 +17,4 @@ schemalite = {path = "../schemalite", features = ["pretty-print"]}
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
 tracing-tree = {git = "https://github.com/aschey/tracing-tree", rev = "f81502acc9bc1e2baea22386896e7ee15e15c924"}
+tui = "0.19.0"

@@ -1,5 +1,6 @@
+use clap::{Parser, ValueEnum};
 use rusqlite::{Connection, OpenFlags};
-use schemalite::{Migrator, Options};
+use schemalite::{Migrator, Options, SqlPrinter};
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer, Registry,
@@ -20,31 +21,95 @@ impl std::io::Write for MemoryWriter {
     }
 }
 
+#[derive(ValueEnum, Clone)]
+enum SchemaType {
+    Source,
+    Target,
+}
+
+#[derive(clap::Parser)]
+enum CliOptions {
+    Migrate,
+    DryRun,
+    PrintSchema { from: SchemaType },
+}
+
 fn main() {
+    let cli_options = CliOptions::parse();
     let source_db = Connection::open_with_flags(
         "file:memdb123",
         OpenFlags::default() | OpenFlags::SQLITE_OPEN_MEMORY | OpenFlags::SQLITE_OPEN_SHARED_CACHE,
     )
     .unwrap();
+
     source_db.execute_batch(schemas()[1]).unwrap();
-    Registry::default()
-        .with(
-            HierarchicalLayer::default()
-                .with_indent_lines(true)
-                .with_level(false)
-                .with_filter(LevelFilter::INFO),
-        )
-        .init();
-    let migrator = Migrator::new(
-        source_db,
-        &[schemas()[2]],
-        Options {
-            allow_deletions: true,
-            dry_run: false,
-        },
-    )
-    .unwrap();
-    migrator.migrate().unwrap();
+
+    match cli_options {
+        CliOptions::Migrate => {
+            Registry::default()
+                .with(
+                    HierarchicalLayer::default()
+                        .with_indent_lines(true)
+                        .with_level(false)
+                        .with_filter(LevelFilter::INFO),
+                )
+                .init();
+            let migrator = Migrator::new(
+                source_db,
+                &[schemas()[2]],
+                Options {
+                    allow_deletions: true,
+                    dry_run: false,
+                },
+            )
+            .unwrap();
+            migrator.migrate().unwrap();
+        }
+        CliOptions::DryRun => {
+            Registry::default()
+                .with(
+                    HierarchicalLayer::default()
+                        .with_indent_lines(true)
+                        .with_level(false)
+                        .with_filter(LevelFilter::INFO),
+                )
+                .init();
+            let migrator = Migrator::new(
+                source_db,
+                &[schemas()[2]],
+                Options {
+                    allow_deletions: true,
+                    dry_run: true,
+                },
+            )
+            .unwrap();
+            migrator.migrate().unwrap();
+        }
+        CliOptions::PrintSchema { from } => {
+            let mut migrator = Migrator::new(
+                source_db,
+                &[schemas()[2]],
+                Options {
+                    allow_deletions: true,
+                    dry_run: true,
+                },
+            )
+            .unwrap();
+            let mut sql_printer = SqlPrinter::default();
+            let metadata = migrator.parse_metadata().unwrap();
+            let source = match from {
+                SchemaType::Source => metadata.source,
+                SchemaType::Target => metadata.target,
+            };
+            for (_, sql) in source.tables {
+                println!("{}", sql_printer.print(&sql));
+            }
+
+            for (_, sql) in source.indexes {
+                println!("{}", sql_printer.print(&sql));
+            }
+        }
+    }
 }
 
 fn schemas() -> [&'static str; 6] {
