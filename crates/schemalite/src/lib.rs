@@ -13,10 +13,10 @@ pub use diff::*;
 mod color;
 pub use color::*;
 mod connection;
+pub use connection::*;
 pub mod error;
 
 use crate::connection::TargetTransaction;
-use connection::{Metadata, PristineConnection, TargetConnection};
 #[cfg(not(feature = "pretty-print"))]
 pub use default_sql_printer::SqlPrinter;
 use error::{InitializationError, MigrationError, QueryError};

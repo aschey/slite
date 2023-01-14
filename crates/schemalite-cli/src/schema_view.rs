@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use schemalite::MigrationMetadata;
+use schemalite::Metadata;
 use tui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
@@ -54,12 +54,12 @@ pub struct SchemaState {
 }
 
 impl SchemaState {
-    pub fn from_schema(schema: MigrationMetadata) -> SchemaState {
-        let mut objects: Vec<String> = schema.target.tables.keys().map(|k| k.to_owned()).collect();
+    pub fn from_schema(schema: Metadata) -> SchemaState {
+        let mut objects: Vec<String> = schema.tables.keys().map(|k| k.to_owned()).collect();
         objects.sort();
         let sql: Vec<String> = objects
             .iter()
-            .map(|o| schema.target.tables.get(o).unwrap().to_owned())
+            .map(|o| schema.tables.get(o).unwrap().to_owned())
             .collect();
 
         let mut state = ListState::default();

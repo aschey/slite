@@ -23,15 +23,17 @@ use tui::{
 struct App<'a> {
     pub titles: Vec<&'a str>,
     pub index: usize,
-    schema: SchemaState,
+    source_schema: SchemaState,
+    target_schema: SchemaState,
 }
 
 impl<'a> App<'a> {
     fn new(schema: MigrationMetadata) -> App<'a> {
         App {
-            titles: vec!["Tab0", "Tab1", "Tab2", "Tab3"],
+            titles: vec!["Source", "Target", "Diff"],
             index: 0,
-            schema: SchemaState::from_schema(schema),
+            source_schema: SchemaState::from_schema(schema.source),
+            target_schema: SchemaState::from_schema(schema.target),
         }
     }
 
@@ -85,6 +87,16 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, mut app: App) -> i
                 KeyCode::Char('q') => return Ok(()),
                 KeyCode::Right => app.next(),
                 KeyCode::Left => app.previous(),
+                KeyCode::Down => match app.index {
+                    0 => app.source_schema.next(),
+                    1 => app.target_schema.next(),
+                    _ => {}
+                },
+                KeyCode::Up => match app.index {
+                    0 => app.source_schema.previous(),
+                    1 => app.target_schema.previous(),
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -122,12 +134,28 @@ fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
                 .bg(Color::Black),
         );
     f.render_widget(tabs, chunks[0]);
-    // let inner = match app.index {
-    //     0 => Block::default().title("Inner 0").borders(Borders::ALL),
-    //     1 => Block::default().title("Inner 1").borders(Borders::ALL),
-    //     2 => Block::default().title("Inner 2").borders(Borders::ALL),
-    //     3 => Block::default().title("Inner 3").borders(Borders::ALL),
-    //     _ => unreachable!(),
-    // };
-    f.render_stateful_widget(SchemaView::new(), chunks[1], &mut app.schema);
+    match app.index {
+        0 => {
+            let block = Block::default().title("Source").borders(Borders::ALL);
+
+            f.render_stateful_widget(
+                SchemaView::new(),
+                block.inner(chunks[1]),
+                &mut app.source_schema,
+            );
+            f.render_widget(block, chunks[1]);
+        }
+        1 => {
+            let block = Block::default().title("Target").borders(Borders::ALL);
+
+            f.render_stateful_widget(
+                SchemaView::new(),
+                block.inner(chunks[1]),
+                &mut app.target_schema,
+            );
+            f.render_widget(block, chunks[1]);
+        }
+        2 => {}
+        _ => unreachable!(),
+    };
 }
