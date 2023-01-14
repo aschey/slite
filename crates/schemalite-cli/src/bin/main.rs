@@ -103,11 +103,11 @@ fn main() {
                 SchemaType::Target => metadata.target,
             };
             for (_, sql) in source.tables {
-                println!("{}", sql_printer.print(&sql, None));
+                println!("{}", sql_printer.print(&sql));
             }
 
             for (_, sql) in source.indexes {
-                println!("{}", sql_printer.print(&sql, None));
+                println!("{}", sql_printer.print(&sql));
             }
         }
         CliOptions::Diff => {
@@ -120,7 +120,7 @@ fn main() {
                 },
             )
             .unwrap();
-            println!("{}", migrator.diff());
+            println!("{}", migrator.diff().unwrap());
         }
     }
 }

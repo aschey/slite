@@ -4,9 +4,9 @@ use std::ops::Range;
 
 use imara_diff::intern::{InternedInput, Interner, Token};
 use imara_diff::Sink;
-use owo_colors::{AnsiColors, OwoColorize};
+use owo_colors::OwoColorize;
 
-use crate::SqlPrinter;
+use crate::{Color, SqlPrinter};
 
 pub struct UnifiedDiffBuilder<'a, W, T>
 where
@@ -69,17 +69,17 @@ where
                     "{}{}",
                     "+ ".white().on_green(),
                     self.sql_printer
-                        .print(&format!("{}", raw_token), Some(AnsiColors::Green))
+                        .print_on(&format!("{}", raw_token), Color::Green)
                 )
                 .to_string(),
                 DiffType::Remove => format!(
                     "{}{}",
                     "- ".white().on_red(),
                     self.sql_printer
-                        .print(&format!("{}", raw_token), Some(AnsiColors::Red))
+                        .print_on(&format!("{}", raw_token), Color::Red)
                 )
                 .to_string(),
-                DiffType::None => self.sql_printer.print(&format!("  {}", raw_token), None),
+                DiffType::None => self.sql_printer.print(&format!("  {}", raw_token)),
             };
 
             write!(&mut self.buffer, "{}", line).unwrap();

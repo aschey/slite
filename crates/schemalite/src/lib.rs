@@ -1,24 +1,25 @@
 #[cfg(feature = "pretty-print")]
 mod ansi_sql_printer;
-
 #[cfg(feature = "pretty-print")]
 pub use ansi_sql_printer::SqlPrinter;
-
 #[cfg(not(feature = "pretty-print"))]
 mod default_sql_printer;
 #[cfg(feature = "diff")]
+mod diff;
+#[cfg(feature = "diff")]
 mod unified_diff_builder;
-
+#[cfg(feature = "diff")]
+pub use diff::*;
+mod color;
+pub use color::*;
+mod connection;
 pub mod error;
 
+use crate::connection::TargetTransaction;
 use connection::{Metadata, PristineConnection, TargetConnection};
 #[cfg(not(feature = "pretty-print"))]
 pub use default_sql_printer::SqlPrinter;
 use error::{InitializationError, MigrationError, QueryError};
-
-mod connection;
-
-use crate::connection::TargetTransaction;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use rusqlite::Connection;
@@ -406,38 +407,6 @@ impl Migrator {
             target: self.pristine.parse_metadata()?,
             source: self.connection.borrow_mut().parse_metadata()?,
         })
-    }
-
-    #[cfg(feature = "diff")]
-    pub fn diff(&mut self) -> String {
-        use imara_diff::{diff, intern::InternedInput, Algorithm};
-        use unified_diff_builder::UnifiedDiffBuilder;
-
-        let metadata = self.parse_metadata().unwrap();
-
-        let mut source_tables: Vec<&String> = metadata.source.tables.keys().collect();
-        let mut target_tables: Vec<&String> = metadata.target.tables.keys().collect();
-        source_tables.sort();
-        target_tables.sort();
-
-        let mut source_table_str = "".to_owned();
-        let mut target_table_str = "".to_owned();
-
-        for table in source_tables {
-            source_table_str.push_str(metadata.source.tables.get(table).unwrap());
-            source_table_str.push('\n');
-        }
-        for table in target_tables {
-            target_table_str.push_str(metadata.target.tables.get(table).unwrap());
-            target_table_str.push('\n');
-        }
-
-        let input = InternedInput::new(source_table_str.as_str(), target_table_str.as_str());
-        diff(
-            Algorithm::Histogram,
-            &input,
-            UnifiedDiffBuilder::new(&input),
-        )
     }
 }
 
