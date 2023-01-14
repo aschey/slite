@@ -111,7 +111,7 @@ fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
         .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
         .split(size);
 
-    let block = Block::default().style(Style::default().fg(Color::Black));
+    let block = Block::default().style(Style::default());
     f.render_widget(block, size);
     let titles = app
         .titles
@@ -136,24 +136,10 @@ fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
     f.render_widget(tabs, chunks[0]);
     match app.index {
         0 => {
-            let block = Block::default().title("Source").borders(Borders::ALL);
-
-            f.render_stateful_widget(
-                SchemaView::new(),
-                block.inner(chunks[1]),
-                &mut app.source_schema,
-            );
-            f.render_widget(block, chunks[1]);
+            f.render_stateful_widget(SchemaView::new(), chunks[1], &mut app.source_schema);
         }
         1 => {
-            let block = Block::default().title("Target").borders(Borders::ALL);
-
-            f.render_stateful_widget(
-                SchemaView::new(),
-                block.inner(chunks[1]),
-                &mut app.target_schema,
-            );
-            f.render_widget(block, chunks[1]);
+            f.render_stateful_widget(SchemaView::new(), chunks[1], &mut app.target_schema);
         }
         2 => {}
         _ => unreachable!(),

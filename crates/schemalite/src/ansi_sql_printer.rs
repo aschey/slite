@@ -6,11 +6,11 @@ use syntect::{
     parsing::SyntaxSet,
 };
 
-static SYNTAXES: OnceCell<SyntaxSet> = OnceCell::new();
+pub(crate) static SYNTAXES: OnceCell<SyntaxSet> = OnceCell::new();
 static THEMES: OnceCell<ThemeSet> = OnceCell::new();
 
 pub struct SqlPrinter {
-    highlighter: syntect::easy::HighlightLines<'static>,
+    pub(crate) highlighter: syntect::easy::HighlightLines<'static>,
 }
 
 impl Default for SqlPrinter {
@@ -36,10 +36,10 @@ impl SqlPrinter {
     }
 
     pub fn print_on(&mut self, sql: &str, color: Color) -> String {
-        self.print_inner(sql, Some(color.into()))
+        self.print_inner(sql, Some(color))
     }
 
-    fn print_inner(&mut self, sql: &str, background: Option<AnsiColors>) -> String {
+    fn print_inner(&mut self, sql: &str, background: Option<Color>) -> String {
         sql.split('\n')
             .map(|line| {
                 let line = format!("{}\n", line);
@@ -48,57 +48,75 @@ impl SqlPrinter {
                     .highlight_line(&line, SYNTAXES.get().unwrap())
                     .unwrap();
 
-                as_terminal_escaped(&regions[..], background)
+                to_ansi_colored(&regions[..], background)
             })
             .collect::<Vec<_>>()
             .join("")
     }
 }
 
-fn as_terminal_escaped(v: &[(Style, &str)], background: Option<AnsiColors>) -> String {
-    let mut s: String = String::new();
-    for &(ref style, text) in v.iter() {
-        if style.foreground.a == 0 {
-            let color: Color = style.foreground.r.into();
-            let color: AnsiColors = color.into();
-            let colored = match background {
-                Some(background) => text.color(color).on_color(background).to_string(),
-                None => text.color(color).to_string(),
-            };
-            s.push_str(&colored);
-        } else if style.foreground.a == 1 {
-            let ends_with_newline = text.ends_with('\n');
-            let text = text.replace('\n', "");
-            let mut text = match background {
-                Some(background) => text.on_color(background).to_string(),
-                None => text.to_owned(),
-            };
-            if ends_with_newline {
-                text.push('\n');
-            }
-            s.push_str(&text);
-        } else {
-            let colored = match background {
-                Some(background) => text
-                    .color(owo_colors::Rgb(
-                        style.foreground.r,
-                        style.foreground.g,
-                        style.foreground.b,
-                    ))
-                    .on_color(background)
-                    .to_string(),
-                None => text
-                    .color(owo_colors::Rgb(
-                        style.foreground.r,
-                        style.foreground.g,
-                        style.foreground.b,
-                    ))
-                    .to_string(),
-            };
+fn to_ansi_colored(v: &[(Style, &str)], background: Option<Color>) -> String {
+    to_colored(
+        v,
+        background,
+        |output: &mut String, style, text, background| {
+            let background: Option<AnsiColors> = background.map(|b| b.into());
+            if style.foreground.a == 0 {
+                let color: Color = style.foreground.r.into();
+                let color: AnsiColors = color.into();
+                let colored = match background {
+                    Some(background) => text.color(color).on_color(background).to_string(),
+                    None => text.color(color).to_string(),
+                };
+                output.push_str(&colored);
+            } else if style.foreground.a == 1 {
+                let ends_with_newline = text.ends_with('\n');
+                let text = text.replace('\n', "");
+                let mut text = match background {
+                    Some(background) => text.on_color(background).to_string(),
+                    None => text,
+                };
+                if ends_with_newline {
+                    text.push('\n');
+                }
+                output.push_str(&text);
+            } else {
+                let colored = match background {
+                    Some(background) => text
+                        .color(owo_colors::Rgb(
+                            style.foreground.r,
+                            style.foreground.g,
+                            style.foreground.b,
+                        ))
+                        .on_color(background)
+                        .to_string(),
+                    None => text
+                        .color(owo_colors::Rgb(
+                            style.foreground.r,
+                            style.foreground.g,
+                            style.foreground.b,
+                        ))
+                        .to_string(),
+                };
 
-            s.push_str(&colored);
-        }
+                output.push_str(&colored);
+            };
+        },
+    )
+}
+
+pub(crate) fn to_colored<O>(
+    v: &[(Style, &str)],
+    background: Option<Color>,
+    transform: impl Fn(&mut O, &Style, &str, Option<Color>),
+) -> O
+where
+    O: Default,
+{
+    let mut output = O::default();
+    for &(ref style, text) in v.iter() {
+        transform(&mut output, style, text, background);
     }
 
-    s
+    output
 }

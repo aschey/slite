@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use schemalite::Metadata;
+use schemalite::{Metadata, SqlPrinter};
 use tui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
-    widgets::{Block, List, ListItem, ListState, Paragraph, StatefulWidget, Widget},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, StatefulWidget, Widget},
 };
 
 #[derive(Debug, Clone)]
@@ -27,28 +27,39 @@ impl StatefulWidget for SchemaView {
     ) {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([
+                Constraint::Length(state.object_view_width as u16),
+                Constraint::Min(0),
+            ])
             .split(area);
         let items: Vec<ListItem> = state
             .objects
             .iter()
-            .map(|i| ListItem::new(i.clone()))
+            .map(|i| ListItem::new(" ".to_owned() + i))
             .collect();
 
         tui::widgets::StatefulWidget::render(
-            List::new(items).highlight_style(Style::default().fg(Color::Green)),
+            List::new(items)
+                .highlight_style(Style::default().fg(Color::Green))
+                .block(Block::default().title("Objects").borders(Borders::ALL)),
             chunks[0],
             buf,
             &mut state.state,
         );
-
-        tui::widgets::Widget::render(Paragraph::new(state.get_sql().to_owned()), chunks[1], buf);
+        let mut printer = SqlPrinter::default();
+        let formatted_sql = printer.print_spans(state.get_sql());
+        tui::widgets::Widget::render(
+            Paragraph::new(formatted_sql).block(Block::default().borders(Borders::ALL)),
+            chunks[1],
+            buf,
+        );
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct SchemaState {
     state: ListState,
+    object_view_width: usize,
     objects: Vec<String>,
     sql: Vec<String>,
 }
@@ -57,6 +68,12 @@ impl SchemaState {
     pub fn from_schema(schema: Metadata) -> SchemaState {
         let mut objects: Vec<String> = schema.tables.keys().map(|k| k.to_owned()).collect();
         objects.sort();
+        let max_length = objects
+            .iter()
+            .map(|o| o.len() + 1)
+            .max()
+            .unwrap_or_default()
+            .max(10);
         let sql: Vec<String> = objects
             .iter()
             .map(|o| schema.tables.get(o).unwrap().to_owned())
@@ -70,6 +87,7 @@ impl SchemaState {
             state,
             objects,
             sql,
+            object_view_width: max_length,
         }
     }
 

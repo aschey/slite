@@ -11,6 +11,8 @@ mod unified_diff_builder;
 #[cfg(feature = "diff")]
 pub use diff::*;
 mod color;
+#[cfg(feature = "tui")]
+mod tui;
 pub use color::*;
 mod connection;
 pub use connection::*;

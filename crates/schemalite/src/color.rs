@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 pub enum Color {
     Black,
     Red,
@@ -61,6 +62,30 @@ impl From<Color> for owo_colors::AnsiColors {
             Color::BrightMagenta => Self::BrightMagenta,
             Color::BrightCyan => Self::BrightCyan,
             Color::BrightWhite => Self::BrightWhite,
+        }
+    }
+}
+
+#[cfg(feature = "tui")]
+impl From<Color> for tui::style::Color {
+    fn from(value: Color) -> Self {
+        match value {
+            Color::Black => Self::Black,
+            Color::Red => Self::Red,
+            Color::Green => Self::Green,
+            Color::Yellow => Self::Yellow,
+            Color::Blue => Self::Blue,
+            Color::Magenta => Self::Magenta,
+            Color::Cyan => Self::Cyan,
+            Color::White => Self::White,
+            Color::BrightBlack => Self::Black,
+            Color::BrightRed => Self::LightRed,
+            Color::BrightGreen => Self::LightGreen,
+            Color::BrightYellow => Self::LightYellow,
+            Color::BrightBlue => Self::LightBlue,
+            Color::BrightMagenta => Self::LightMagenta,
+            Color::BrightCyan => Self::LightCyan,
+            Color::BrightWhite => Self::White,
         }
     }
 }
