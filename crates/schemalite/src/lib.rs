@@ -6,12 +6,15 @@ pub use ansi_sql_printer::SqlPrinter;
 
 #[cfg(not(feature = "pretty-print"))]
 mod default_sql_printer;
+#[cfg(feature = "diff")]
 mod unified_diff_builder;
+
+pub mod error;
+
 use connection::{Metadata, PristineConnection, TargetConnection};
 #[cfg(not(feature = "pretty-print"))]
 pub use default_sql_printer::SqlPrinter;
-use imara_diff::{diff, intern::InternedInput, Algorithm};
-use unified_diff_builder::UnifiedDiffBuilder;
+use error::{InitializationError, MigrationError, QueryError};
 
 mod connection;
 
@@ -33,35 +36,11 @@ regex!(WHITESPACE_RE, r"\s+");
 regex!(EXTRA_WHITESPACE_RE, r" *([(),]) *");
 regex!(QUOTES_RE, r#""(\w+)""#);
 
-#[derive(thiserror::Error, Debug)]
-pub enum InitializationError {
-    #[error("{0}: {1}")]
-    QueryFailure(String, QueryError),
-    #[error("Failed to connect to the database {0}: {1}")]
-    ConnectionFailure(String, #[source] rusqlite::Error),
+#[derive(Debug, Default)]
+pub struct Options {
+    pub allow_deletions: bool,
+    pub dry_run: bool,
 }
-
-#[derive(thiserror::Error, Debug)]
-pub enum MigrationError {
-    #[error("{0}: {1}")]
-    QueryFailure(String, QueryError),
-    #[error("Failed to initialize transaction: {0}")]
-    TransactionInitializationFailure(#[source] rusqlite::Error),
-    #[error("Failed to commit transaction: {0}")]
-    TransactionCommitFailure(#[source] rusqlite::Error),
-    #[error("Failed to rollback transaction: {0}")]
-    TransactionRollbackFailure(#[source] rusqlite::Error),
-    #[error("Aborting migration because data loss would occur and allow_deletions is false: {0}")]
-    DataLoss(String),
-    #[error("The following foreign keys have constraint violations: {0:?}")]
-    ForeignKeyViolation(Vec<String>),
-}
-
-#[derive(thiserror::Error, Debug)]
-#[error("Failed to execute query {0}: {1}")]
-pub struct QueryError(String, #[source] rusqlite::Error);
-
-pub type LogFn = Box<dyn Fn(&str)>;
 
 pub struct Migrator {
     connection: Rc<RefCell<TargetConnection>>,
@@ -69,12 +48,6 @@ pub struct Migrator {
     options: Options,
     foreign_keys_enabled: bool,
     modified: bool,
-}
-
-#[derive(Debug, Default)]
-pub struct Options {
-    pub allow_deletions: bool,
-    pub dry_run: bool,
 }
 
 impl Migrator {
@@ -152,204 +125,17 @@ impl Migrator {
                     MigrationError::QueryFailure("Error enabling defer_foreign_keys".to_owned(), e)
                 })?;
         }
-        let table_span = span!(Level::INFO, "Migrating tables");
-        let _table_guard = table_span.entered();
+
         let pristine_metadata = self.pristine.parse_metadata().map_err(|e| {
             MigrationError::QueryFailure(
                 "Failed to get metadata from pristine database".to_owned(),
                 e,
             )
         })?;
-        let metadata = tx.parse_metadata().map_err(|e| {
-            MigrationError::QueryFailure(
-                "Failed to get metadata from current database".to_owned(),
-                e,
-            )
-        })?;
-        let new_tables: HashMap<&String, &String> = pristine_metadata
-            .tables
-            .iter()
-            .filter(|(k, _)| !metadata.tables.contains_key(*k))
-            .collect();
-        let removed_tables: Vec<&String> = metadata
-            .tables
-            .keys()
-            .filter(|k| !pristine_metadata.tables.contains_key(*k))
-            .collect();
 
-        if !removed_tables.is_empty() && !self.options.allow_deletions {
-            let removed_table_list = removed_tables
-                .into_iter()
-                .map(|t| t.to_owned())
-                .collect::<Vec<_>>()
-                .join(",");
-            return Err(MigrationError::DataLoss(format!(
-                "The following tables would be removed: {removed_table_list}"
-            )));
-        }
+        self.migrate_tables(tx, &pristine_metadata)?;
+        self.migrate_indexes(tx, &pristine_metadata)?;
 
-        let empty = "".to_owned();
-        let modified_tables: HashMap<&String, &String> = pristine_metadata
-            .tables
-            .iter()
-            .filter(|(name, sql)| {
-                normalize_sql(metadata.tables.get(*name).unwrap_or(&empty)) != normalize_sql(sql)
-            })
-            .collect();
-        tx.execute("PRAGMA defer_foreign_keys = TRUE")
-            .map_err(|e| {
-                MigrationError::QueryFailure("Error enabling defer_foreign_keys".to_owned(), e)
-            })?;
-
-        let create_table_span = span!(Level::INFO, "Creating tables");
-        let _create_table_guard = create_table_span.entered();
-        if new_tables.is_empty() {
-            info!("No tables to create");
-        }
-        for (new_table, new_table_sql) in new_tables {
-            info!("Creating table {new_table}");
-            tx.execute(new_table_sql).map_err(|e| {
-                MigrationError::QueryFailure(format!("Error creating table {new_table}"), e)
-            })?;
-        }
-        drop(_create_table_guard);
-
-        let drop_table_span = span!(Level::INFO, "Dropping tables");
-        let _drop_table_guard = drop_table_span.entered();
-        if removed_tables.is_empty() {
-            info!("No tables to drop");
-        }
-        for removed_table in removed_tables {
-            info!("Dropping table {removed_table}");
-            tx.execute(&format!("DROP TABLE {removed_table}"))
-                .map_err(|e| {
-                    MigrationError::QueryFailure(format!("Error dropping table {removed_table}"), e)
-                })?;
-        }
-        drop(_drop_table_guard);
-
-        let modify_table_span = span!(Level::INFO, "Modifying tables");
-        let _modify_table_guard = modify_table_span.entered();
-        if modified_tables.is_empty() {
-            info!("No tables to modify");
-        }
-        for (modified_table, modified_table_sql) in modified_tables {
-            info!("Modifying table {modified_table}");
-            let temp_table = format!("{modified_table}_migration_new");
-            let create_table_regex = Regex::new(&format!(r"\b{}\b", regex::escape(modified_table)))
-                .expect("Regex should compile");
-            let create_temp_table_sql =
-                create_table_regex.replace_all(modified_table_sql, &temp_table);
-            tx.execute(&create_temp_table_sql).map_err(|e| {
-                MigrationError::QueryFailure(format!("Error creating temp table {temp_table}"), e)
-            })?;
-            let cols = tx.get_cols(modified_table).map_err(|e| {
-                MigrationError::QueryFailure(
-                    format!("Error getting columns for table {modified_table}"),
-                    e,
-                )
-            })?;
-            let pristine_cols = self.pristine.get_cols(modified_table).map_err(|e| {
-                MigrationError::QueryFailure(
-                    format!("Error getting columns for table {modified_table}"),
-                    e,
-                )
-            })?;
-            let removed_cols: Vec<&String> =
-                cols.iter().filter(|c| !pristine_cols.contains(c)).collect();
-            if !self.options.allow_deletions && !removed_cols.is_empty() {
-                return Err(MigrationError::DataLoss(format!(
-                    "The following columns would be dropped: {}",
-                    removed_cols
-                        .into_iter()
-                        .map(|c| c.to_owned())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )));
-            }
-            let common_cols = cols
-                .into_iter()
-                .filter(|c| pristine_cols.contains(c))
-                .collect::<Vec<_>>()
-                .join(",");
-            tx
-                .execute(
-                    &format!("INSERT INTO {temp_table} ({common_cols}) SELECT {common_cols} FROM {modified_table}"),
-                )
-                .map_err(|e| {
-                    MigrationError::QueryFailure(format!("Error migrating data into table {modified_table}"), e)
-                })?;
-            tx.execute(&format!("DROP TABLE {modified_table}"))
-                .map_err(|e| {
-                    MigrationError::QueryFailure(
-                        format!("Error dropping table {modified_table}"),
-                        e,
-                    )
-                })?;
-            tx.execute(&format!(
-                "ALTER TABLE {temp_table} RENAME TO {modified_table}"
-            ))
-            .map_err(|e| {
-                MigrationError::QueryFailure(
-                    format!("Error renaming {temp_table} to {modified_table}"),
-                    e,
-                )
-            })?;
-        }
-        drop(_modify_table_guard);
-        drop(_table_guard);
-
-        let index_span = span!(Level::INFO, "Migrating indexes");
-        let _index_guard = index_span.entered();
-
-        let metadata = tx.parse_metadata().map_err(|e| {
-            MigrationError::QueryFailure(
-                "Failed to get metadata from current database".to_owned(),
-                e,
-            )
-        })?;
-
-        let old_indexes = metadata
-            .indexes
-            .keys()
-            .filter(|k| !pristine_metadata.indexes.contains_key(*k));
-        for index in old_indexes {
-            info!("Dropping index {index}");
-            tx.execute(&format!("DROP INDEX {index}")).map_err(|e| {
-                MigrationError::QueryFailure(format!("Failed to drop index {index}"), e)
-            })?;
-        }
-        for (index_name, sql) in pristine_metadata.indexes {
-            match metadata.indexes.get(&index_name) {
-                Some(old_index) if normalize_sql(&sql) != normalize_sql(old_index) => {
-                    info!("Updating index {index_name}");
-                    tx.execute(&format!("DROP INDEX {index_name}"))
-                        .map_err(|e| {
-                            MigrationError::QueryFailure(
-                                format!("Error dropping index {index_name}"),
-                                e,
-                            )
-                        })?;
-                    tx.execute(&sql).map_err(|e| {
-                        MigrationError::QueryFailure(
-                            format!("Error creating index {index_name}"),
-                            e,
-                        )
-                    })?;
-                }
-                None => {
-                    info!("Creating index {index_name}");
-                    tx.execute(&sql).map_err(|e| {
-                        MigrationError::QueryFailure(
-                            format!("Error creating index {index_name}"),
-                            e,
-                        )
-                    })?;
-                }
-                _ => {}
-            }
-        }
-        drop(_index_guard);
         if self
             .pristine
             .get_pragma::<i32>("foreign_keys")
@@ -373,6 +159,248 @@ impl Migrator {
         Ok(())
     }
 
+    fn migrate_tables(
+        &mut self,
+        tx: &mut TargetTransaction,
+        pristine_metadata: &Metadata,
+    ) -> Result<(), MigrationError> {
+        let table_span = span!(Level::INFO, "Migrating tables");
+        let _table_guard = table_span.entered();
+
+        let metadata = tx.parse_metadata().map_err(|e| {
+            MigrationError::QueryFailure(
+                "Failed to get metadata from current database".to_owned(),
+                e,
+            )
+        })?;
+
+        self.create_new_tables(tx, pristine_metadata, &metadata)?;
+        self.drop_old_tables(tx, pristine_metadata, &metadata)?;
+        self.update_tables(tx, pristine_metadata, &metadata)?;
+
+        Ok(())
+    }
+
+    fn create_new_tables(
+        &mut self,
+        tx: &mut TargetTransaction,
+        pristine_metadata: &Metadata,
+        metadata: &Metadata,
+    ) -> Result<(), MigrationError> {
+        let create_table_span = span!(Level::INFO, "Creating tables");
+        let _create_table_guard = create_table_span.entered();
+
+        let new_tables: HashMap<&String, &String> = pristine_metadata
+            .tables
+            .iter()
+            .filter(|(k, _)| !metadata.tables.contains_key(*k))
+            .collect();
+
+        if new_tables.is_empty() {
+            info!("No tables to create");
+        }
+        for (new_table, new_table_sql) in new_tables {
+            info!("Creating table {new_table}");
+            tx.execute(new_table_sql).map_err(|e| {
+                MigrationError::QueryFailure(format!("Error creating table {new_table}"), e)
+            })?;
+        }
+        Ok(())
+    }
+
+    fn drop_old_tables(
+        &mut self,
+        tx: &mut TargetTransaction,
+        pristine_metadata: &Metadata,
+        metadata: &Metadata,
+    ) -> Result<(), MigrationError> {
+        let drop_table_span = span!(Level::INFO, "Dropping tables");
+        let _drop_table_guard = drop_table_span.entered();
+
+        let removed_tables: Vec<&String> = metadata
+            .tables
+            .keys()
+            .filter(|k| !pristine_metadata.tables.contains_key(*k))
+            .collect();
+
+        if !removed_tables.is_empty() && !self.options.allow_deletions {
+            let removed_table_list = removed_tables
+                .into_iter()
+                .map(|t| t.to_owned())
+                .collect::<Vec<_>>()
+                .join(",");
+            return Err(MigrationError::DataLoss(format!(
+                "The following tables would be removed: {removed_table_list}"
+            )));
+        }
+
+        if removed_tables.is_empty() {
+            info!("No tables to drop");
+        }
+        for removed_table in removed_tables {
+            info!("Dropping table {removed_table}");
+            tx.execute(&format!("DROP TABLE {removed_table}"))
+                .map_err(|e| {
+                    MigrationError::QueryFailure(format!("Error dropping table {removed_table}"), e)
+                })?;
+        }
+        Ok(())
+    }
+
+    fn update_tables(
+        &mut self,
+        tx: &mut TargetTransaction,
+        pristine_metadata: &Metadata,
+        metadata: &Metadata,
+    ) -> Result<(), MigrationError> {
+        let modify_table_span = span!(Level::INFO, "Modifying tables");
+        let _modify_table_guard = modify_table_span.entered();
+
+        let empty = "".to_owned();
+        let modified_tables: HashMap<&String, &String> = pristine_metadata
+            .tables
+            .iter()
+            .filter(|(name, sql)| {
+                normalize_sql(metadata.tables.get(*name).unwrap_or(&empty)) != normalize_sql(sql)
+            })
+            .collect();
+
+        if modified_tables.is_empty() {
+            info!("No tables to modify");
+        }
+        for (modified_table, modified_table_sql) in modified_tables {
+            self.update_table(tx, modified_table, modified_table_sql)?;
+        }
+        Ok(())
+    }
+
+    fn update_table(
+        &mut self,
+        tx: &mut TargetTransaction,
+        modified_table: &str,
+        modified_table_sql: &str,
+    ) -> Result<(), MigrationError> {
+        info!("Modifying table {modified_table}");
+        let temp_table = format!("{modified_table}_migration_new");
+        let create_table_regex = Regex::new(&format!(r"\b{}\b", regex::escape(modified_table)))
+            .expect("Regex should compile");
+        let create_temp_table_sql = create_table_regex.replace_all(modified_table_sql, &temp_table);
+        tx.execute(&create_temp_table_sql).map_err(|e| {
+            MigrationError::QueryFailure(format!("Error creating temp table {temp_table}"), e)
+        })?;
+        let cols = tx.get_cols(modified_table).map_err(|e| {
+            MigrationError::QueryFailure(
+                format!("Error getting columns for table {modified_table}"),
+                e,
+            )
+        })?;
+        let pristine_cols = self.pristine.get_cols(modified_table).map_err(|e| {
+            MigrationError::QueryFailure(
+                format!("Error getting columns for table {modified_table}"),
+                e,
+            )
+        })?;
+        let removed_cols: Vec<&String> =
+            cols.iter().filter(|c| !pristine_cols.contains(c)).collect();
+        if !self.options.allow_deletions && !removed_cols.is_empty() {
+            return Err(MigrationError::DataLoss(format!(
+                "The following columns would be dropped: {}",
+                removed_cols
+                    .into_iter()
+                    .map(|c| c.to_owned())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+        let common_cols = cols
+            .into_iter()
+            .filter(|c| pristine_cols.contains(c))
+            .collect::<Vec<_>>()
+            .join(",");
+        tx.execute(&format!(
+            "INSERT INTO {temp_table} ({common_cols}) SELECT {common_cols} FROM {modified_table}"
+        ))
+        .map_err(|e| {
+            MigrationError::QueryFailure(
+                format!("Error migrating data into table {modified_table}"),
+                e,
+            )
+        })?;
+        tx.execute(&format!("DROP TABLE {modified_table}"))
+            .map_err(|e| {
+                MigrationError::QueryFailure(format!("Error dropping table {modified_table}"), e)
+            })?;
+        tx.execute(&format!(
+            "ALTER TABLE {temp_table} RENAME TO {modified_table}"
+        ))
+        .map_err(|e| {
+            MigrationError::QueryFailure(
+                format!("Error renaming {temp_table} to {modified_table}"),
+                e,
+            )
+        })?;
+        Ok(())
+    }
+
+    fn migrate_indexes(
+        &mut self,
+        tx: &mut TargetTransaction,
+        pristine_metadata: &Metadata,
+    ) -> Result<(), MigrationError> {
+        let index_span = span!(Level::INFO, "Migrating indexes");
+        let _index_guard = index_span.entered();
+
+        let metadata = tx.parse_metadata().map_err(|e| {
+            MigrationError::QueryFailure(
+                "Failed to get metadata from current database".to_owned(),
+                e,
+            )
+        })?;
+
+        let old_indexes = metadata
+            .indexes
+            .keys()
+            .filter(|k| !pristine_metadata.indexes.contains_key(*k));
+        for index in old_indexes {
+            info!("Dropping index {index}");
+            tx.execute(&format!("DROP INDEX {index}")).map_err(|e| {
+                MigrationError::QueryFailure(format!("Failed to drop index {index}"), e)
+            })?;
+        }
+        for (index_name, sql) in &pristine_metadata.indexes {
+            match metadata.indexes.get(index_name) {
+                Some(old_index) if normalize_sql(sql) != normalize_sql(old_index) => {
+                    info!("Updating index {index_name}");
+                    tx.execute(&format!("DROP INDEX {index_name}"))
+                        .map_err(|e| {
+                            MigrationError::QueryFailure(
+                                format!("Error dropping index {index_name}"),
+                                e,
+                            )
+                        })?;
+                    tx.execute(sql).map_err(|e| {
+                        MigrationError::QueryFailure(
+                            format!("Error creating index {index_name}"),
+                            e,
+                        )
+                    })?;
+                }
+                None => {
+                    info!("Creating index {index_name}");
+                    tx.execute(sql).map_err(|e| {
+                        MigrationError::QueryFailure(
+                            format!("Error creating index {index_name}"),
+                            e,
+                        )
+                    })?;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn parse_metadata(&mut self) -> Result<MigrationMetadata, QueryError> {
         Ok(MigrationMetadata {
             target: self.pristine.parse_metadata()?,
@@ -380,7 +408,11 @@ impl Migrator {
         })
     }
 
+    #[cfg(feature = "diff")]
     pub fn diff(&mut self) -> String {
+        use imara_diff::{diff, intern::InternedInput, Algorithm};
+        use unified_diff_builder::UnifiedDiffBuilder;
+
         let metadata = self.parse_metadata().unwrap();
 
         let mut source_tables: Vec<&String> = metadata.source.tables.keys().collect();
