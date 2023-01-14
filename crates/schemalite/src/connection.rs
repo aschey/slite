@@ -322,7 +322,7 @@ fn select_metadata(
 ) -> Result<HashMap<String, String>, QueryError> {
     let results =
         query::<(String, String), _>(connection, sql, log_level, msg, sql_printer, |row| {
-            Ok((row.get(0)?, row.get(1)?))
+            Ok((row.get(0)?, row.get::<_, String>(1)?.replace("    ", " ")))
         })?;
     Ok(HashMap::from_iter(results))
 }

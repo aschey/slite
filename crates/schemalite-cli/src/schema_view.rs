@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use schemalite::{Metadata, SqlPrinter};
 use tui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
+    text::Text,
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, StatefulWidget, Widget},
 };
 
@@ -32,11 +33,7 @@ impl StatefulWidget for SchemaView {
                 Constraint::Min(0),
             ])
             .split(area);
-        let items: Vec<ListItem> = state
-            .objects
-            .iter()
-            .map(|i| ListItem::new(" ".to_owned() + i))
-            .collect();
+        let items: Vec<ListItem> = state.objects.iter().map(|i| i.clone().into()).collect();
 
         tui::widgets::StatefulWidget::render(
             List::new(items)
@@ -47,7 +44,7 @@ impl StatefulWidget for SchemaView {
             &mut state.state,
         );
         let mut printer = SqlPrinter::default();
-        let formatted_sql = printer.print_spans(state.get_sql());
+        let formatted_sql = printer.print_spans(state.get_sql().unwrap());
         tui::widgets::Widget::render(
             Paragraph::new(formatted_sql).block(Block::default().borders(Borders::ALL)),
             chunks[1],
@@ -57,69 +54,130 @@ impl StatefulWidget for SchemaView {
 }
 
 #[derive(Debug, Clone)]
+pub enum ListItemType {
+    Entry { title: String, sql: String },
+    Header(String),
+}
+
+impl From<ListItemType> for ListItem<'static> {
+    fn from(val: ListItemType) -> Self {
+        match val {
+            ListItemType::Entry { title, .. } => ListItem::new("  ".to_owned() + &title),
+            ListItemType::Header(title) => ListItem::new(Text::styled(
+                title,
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct SchemaState {
     state: ListState,
     object_view_width: usize,
-    objects: Vec<String>,
-    sql: Vec<String>,
+    objects: Vec<ListItemType>,
+    has_items: bool,
+    // sql: Vec<String>,
 }
 
 impl SchemaState {
     pub fn from_schema(schema: Metadata) -> SchemaState {
-        let mut objects: Vec<String> = schema.tables.keys().map(|k| k.to_owned()).collect();
-        objects.sort();
-        let max_length = objects
+        let mut list_items = vec![];
+        let mut has_items = false;
+        let mut tables: Vec<String> = schema.tables.keys().map(|k| k.to_owned()).collect();
+        tables.sort();
+        has_items |= !tables.is_empty();
+        list_items.push(ListItemType::Header("Tables".to_owned()));
+
+        list_items.extend(tables.into_iter().map(|t| ListItemType::Entry {
+            sql: schema.tables.get(&t).unwrap().to_owned(),
+            title: t,
+        }));
+
+        let mut indexes: Vec<String> = schema.indexes.keys().map(|k| k.to_owned()).collect();
+        indexes.sort();
+        has_items |= !indexes.is_empty();
+        list_items.push(ListItemType::Header("Indexes".to_owned()));
+
+        list_items.extend(indexes.into_iter().map(|t| ListItemType::Entry {
+            sql: schema.indexes.get(&t).unwrap().to_owned(),
+            title: t,
+        }));
+
+        let max_length = list_items
             .iter()
-            .map(|o| o.len() + 1)
+            .map(|o| match o {
+                ListItemType::Header(header) => header.len(),
+                ListItemType::Entry { title, .. } => title.len()
+            }+5)
             .max()
-            .unwrap_or_default()
-            .max(10);
-        let sql: Vec<String> = objects
-            .iter()
-            .map(|o| schema.tables.get(o).unwrap().to_owned())
-            .collect();
+            .unwrap_or_default();
 
         let mut state = ListState::default();
-        if !objects.is_empty() {
-            state.select(Some(0));
+        if has_items {
+            state.select(Some(1));
         }
         SchemaState {
             state,
-            objects,
-            sql,
+            objects: list_items,
             object_view_width: max_length,
+            has_items,
         }
     }
 
     pub fn next(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i >= self.objects.len() - 1 {
-                    0
-                } else {
-                    i + 1
+        if !self.has_items {
+            return;
+        }
+
+        let mut next_index = (self.state.selected().unwrap() + 1) % self.objects.len();
+        let adjusted_index = loop {
+            match self.objects.get(next_index) {
+                Some(ListItemType::Entry { .. }) => {
+                    break next_index;
                 }
+                Some(ListItemType::Header(_)) => {
+                    next_index = (next_index + 1) % self.objects.len();
+                }
+                None => unreachable!(),
             }
-            None => 0,
         };
-        self.state.select(Some(i));
+
+        self.state.select(Some(adjusted_index));
     }
 
     pub fn previous(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.objects.len() - 1
-                } else {
-                    i - 1
+        if !self.has_items {
+            return;
+        }
+
+        let mut next_index = (self.state.selected().unwrap() - 1) % self.objects.len();
+        let adjusted_index = loop {
+            match self.objects.get(next_index) {
+                Some(ListItemType::Entry { .. }) => {
+                    break next_index;
                 }
+                Some(ListItemType::Header(_)) => {
+                    next_index = (next_index - 1) % self.objects.len();
+                }
+                None => unreachable!(),
             }
-            None => 0,
         };
-        self.state.select(Some(i));
+
+        self.state.select(Some(adjusted_index));
     }
 
-    fn get_sql(&self) -> &String {
-        self.sql.get(self.state.selected().unwrap()).unwrap()
+    fn get_sql(&self) -> Option<&String> {
+        if !self.has_items {
+            return None;
+        }
+        if let ListItemType::Entry { sql, .. } =
+            self.objects.get(self.state.selected().unwrap()).unwrap()
+        {
+            return Some(sql);
+        }
+        None
     }
 }
