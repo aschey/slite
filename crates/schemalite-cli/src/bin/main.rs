@@ -130,7 +130,16 @@ fn main() {
             println!("{}", migrator.diff().unwrap());
         }
         None => {
-            run_tui().unwrap();
+            let mut migrator = Migrator::new(
+                source_db,
+                &[schemas()[2]],
+                Options {
+                    allow_deletions: true,
+                    dry_run: true,
+                },
+            )
+            .unwrap();
+            run_tui(migrator.parse_metadata().unwrap()).unwrap();
         }
     }
 }

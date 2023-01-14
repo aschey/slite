@@ -1,8 +1,12 @@
+mod schema_view;
+
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use schema_view::{SchemaState, SchemaView};
+use schemalite::MigrationMetadata;
 use std::{
     error::Error,
     io::{self, Stdout},
@@ -19,13 +23,15 @@ use tui::{
 struct App<'a> {
     pub titles: Vec<&'a str>,
     pub index: usize,
+    schema: SchemaState,
 }
 
 impl<'a> App<'a> {
-    fn new() -> App<'a> {
+    fn new(schema: MigrationMetadata) -> App<'a> {
         App {
             titles: vec!["Tab0", "Tab1", "Tab2", "Tab3"],
             index: 0,
+            schema: SchemaState::from_schema(schema),
         }
     }
 
@@ -42,7 +48,7 @@ impl<'a> App<'a> {
     }
 }
 
-pub fn run_tui() -> Result<(), Box<dyn Error>> {
+pub fn run_tui(schema: MigrationMetadata) -> Result<(), Box<dyn Error>> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -51,7 +57,7 @@ pub fn run_tui() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let app = App::new();
+    let app = App::new(schema);
     let res = run_app(&mut terminal, app);
 
     // restore terminal
@@ -72,7 +78,7 @@ pub fn run_tui() -> Result<(), Box<dyn Error>> {
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, mut app: App) -> io::Result<()> {
     loop {
-        terminal.draw(|f| ui(f, &app))?;
+        terminal.draw(|f| ui(f, &mut app))?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
@@ -85,7 +91,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, mut app: App) -> i
     }
 }
 
-fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &App) {
+fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
     let size = f.size();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -116,12 +122,12 @@ fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &App) {
                 .bg(Color::Black),
         );
     f.render_widget(tabs, chunks[0]);
-    let inner = match app.index {
-        0 => Block::default().title("Inner 0").borders(Borders::ALL),
-        1 => Block::default().title("Inner 1").borders(Borders::ALL),
-        2 => Block::default().title("Inner 2").borders(Borders::ALL),
-        3 => Block::default().title("Inner 3").borders(Borders::ALL),
-        _ => unreachable!(),
-    };
-    f.render_widget(inner, chunks[1]);
+    // let inner = match app.index {
+    //     0 => Block::default().title("Inner 0").borders(Borders::ALL),
+    //     1 => Block::default().title("Inner 1").borders(Borders::ALL),
+    //     2 => Block::default().title("Inner 2").borders(Borders::ALL),
+    //     3 => Block::default().title("Inner 3").borders(Borders::ALL),
+    //     _ => unreachable!(),
+    // };
+    f.render_stateful_widget(SchemaView::new(), chunks[1], &mut app.schema);
 }
