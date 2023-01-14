@@ -12,6 +12,7 @@ path = "src/bin/main.rs"
 
 [dependencies]
 clap = {version = "4.0.32", features = ["derive"]}
+crossterm = "0.25.0"
 rusqlite = {version = "0.28.0", features = ["bundled"]}
 schemalite = {path = "../schemalite", features = ["pretty-print", "diff"]}
 tracing = "0.1.37"

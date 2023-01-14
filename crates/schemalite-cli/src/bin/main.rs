@@ -1,6 +1,7 @@
 use clap::{Parser, ValueEnum};
 use rusqlite::{Connection, OpenFlags};
 use schemalite::{Migrator, Options, SqlPrinter};
+use schemalite_cli::run_tui;
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer, Registry,
@@ -27,16 +28,22 @@ enum SchemaType {
     Target,
 }
 
-#[derive(clap::Parser)]
-enum CliOptions {
+#[derive(clap::Subcommand, Clone)]
+enum Command {
     Migrate,
     DryRun,
     Diff,
     PrintSchema { from: SchemaType },
 }
 
+#[derive(clap::Parser)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
 fn main() {
-    let cli_options = CliOptions::parse();
+    let cli = Cli::parse();
     let source_db = Connection::open_with_flags(
         "file:memdb123",
         OpenFlags::default() | OpenFlags::SQLITE_OPEN_MEMORY | OpenFlags::SQLITE_OPEN_SHARED_CACHE,
@@ -45,8 +52,8 @@ fn main() {
 
     source_db.execute_batch(schemas()[1]).unwrap();
 
-    match cli_options {
-        CliOptions::Migrate => {
+    match cli.command {
+        Some(Command::Migrate) => {
             Registry::default()
                 .with(
                     HierarchicalLayer::default()
@@ -66,7 +73,7 @@ fn main() {
             .unwrap();
             migrator.migrate().unwrap();
         }
-        CliOptions::DryRun => {
+        Some(Command::DryRun) => {
             Registry::default()
                 .with(
                     HierarchicalLayer::default()
@@ -86,7 +93,7 @@ fn main() {
             .unwrap();
             migrator.migrate().unwrap();
         }
-        CliOptions::PrintSchema { from } => {
+        Some(Command::PrintSchema { from }) => {
             let mut migrator = Migrator::new(
                 source_db,
                 &[schemas()[2]],
@@ -110,7 +117,7 @@ fn main() {
                 println!("{}", sql_printer.print(&sql));
             }
         }
-        CliOptions::Diff => {
+        Some(Command::Diff) => {
             let mut migrator = Migrator::new(
                 source_db,
                 &[schemas()[2]],
@@ -121,6 +128,9 @@ fn main() {
             )
             .unwrap();
             println!("{}", migrator.diff().unwrap());
+        }
+        None => {
+            run_tui().unwrap();
         }
     }
 }
