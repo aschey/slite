@@ -22,7 +22,7 @@ pub fn sql_diff(source: &str, target: &str) -> String {
         UnifiedDiffBuilder::new(&input),
     );
     if diff_result.is_empty() {
-        return format!("\n{}", SqlPrinter::default().print(target));
+        return format!("\n  {}", SqlPrinter::default().print(target));
     }
     diff_result
 }
