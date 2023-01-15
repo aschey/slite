@@ -11,6 +11,7 @@ path = "src/bin/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ansi-to-tui = "2.0.0"
 clap = {version = "4.0.32", features = ["derive"]}
 crossterm = "0.25.0"
 rusqlite = {version = "0.28.0", features = ["bundled"]}

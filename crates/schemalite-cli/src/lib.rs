@@ -1,10 +1,11 @@
+mod diff_view;
 mod schema_view;
-
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use diff_view::{DiffState, DiffView};
 use schema_view::{SchemaState, SchemaView};
 use schemalite::MigrationMetadata;
 use std::{
@@ -25,6 +26,7 @@ struct App<'a> {
     pub index: usize,
     source_schema: SchemaState,
     target_schema: SchemaState,
+    diff_schema: DiffState,
 }
 
 impl<'a> App<'a> {
@@ -32,8 +34,9 @@ impl<'a> App<'a> {
         App {
             titles: vec!["Source", "Target", "Diff"],
             index: 0,
-            source_schema: SchemaState::from_schema(schema.source),
-            target_schema: SchemaState::from_schema(schema.target),
+            source_schema: SchemaState::from_schema(schema.source.clone()),
+            target_schema: SchemaState::from_schema(schema.target.clone()),
+            diff_schema: DiffState::from_schema(schema),
         }
     }
 
@@ -90,11 +93,13 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, mut app: App) -> i
                 KeyCode::Down => match app.index {
                     0 => app.source_schema.next(),
                     1 => app.target_schema.next(),
+                    2 => app.diff_schema.next(),
                     _ => {}
                 },
                 KeyCode::Up => match app.index {
                     0 => app.source_schema.previous(),
                     1 => app.target_schema.previous(),
+                    2 => app.diff_schema.previous(),
                     _ => {}
                 },
                 _ => {}
@@ -141,7 +146,9 @@ fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
         1 => {
             f.render_stateful_widget(SchemaView::new(), chunks[1], &mut app.target_schema);
         }
-        2 => {}
+        2 => {
+            f.render_stateful_widget(DiffView::new(), chunks[1], &mut app.diff_schema);
+        }
         _ => unreachable!(),
     };
 }

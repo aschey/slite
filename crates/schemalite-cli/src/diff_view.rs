@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use schemalite::{Metadata, SqlPrinter};
+use ansi_to_tui::IntoText;
+use schemalite::{sql_diff, Metadata, MigrationMetadata, SqlPrinter};
 use tui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -9,16 +10,16 @@ use tui::{
 };
 
 #[derive(Debug, Clone)]
-pub struct SchemaView {}
+pub struct DiffView {}
 
-impl SchemaView {
+impl DiffView {
     pub fn new() -> Self {
         Self {}
     }
 }
 
-impl StatefulWidget for SchemaView {
-    type State = SchemaState;
+impl StatefulWidget for DiffView {
+    type State = DiffState;
 
     fn render(
         self,
@@ -43,10 +44,12 @@ impl StatefulWidget for SchemaView {
             buf,
             &mut state.state,
         );
-        let mut printer = SqlPrinter::default();
-        let formatted_sql = printer.print_spans(state.get_sql().unwrap());
+
+        let (source_sql, target_sql) = state.get_sql().unwrap();
+        let diff = sql_diff(source_sql, target_sql);
+
         tui::widgets::Widget::render(
-            Paragraph::new(formatted_sql).block(Block::default().borders(Borders::ALL)),
+            Paragraph::new(diff.into_text().unwrap()).block(Block::default().borders(Borders::ALL)),
             chunks[1],
             buf,
         );
@@ -55,7 +58,11 @@ impl StatefulWidget for SchemaView {
 
 #[derive(Debug, Clone)]
 pub enum ListItemType {
-    Entry { title: String, sql: String },
+    Entry {
+        title: String,
+        source_sql: String,
+        target_sql: String,
+    },
     Header(String),
 }
 
@@ -74,34 +81,51 @@ impl From<ListItemType> for ListItem<'static> {
 }
 
 #[derive(Debug, Clone)]
-pub struct SchemaState {
+pub struct DiffState {
     state: ListState,
     object_view_width: usize,
     objects: Vec<ListItemType>,
     has_items: bool,
 }
 
-impl SchemaState {
-    pub fn from_schema(schema: Metadata) -> SchemaState {
+impl DiffState {
+    pub fn from_schema(schemas: MigrationMetadata) -> DiffState {
         let mut list_items = vec![];
         let mut has_items = false;
-        let mut tables: Vec<String> = schema.tables.keys().map(|k| k.to_owned()).collect();
+        let mut tables: Vec<String> = schemas
+            .target
+            .tables
+            .keys()
+            .chain(schemas.source.tables.keys())
+            .map(|k| k.to_owned())
+            .collect();
         tables.sort();
+        tables.dedup();
+
         has_items |= !tables.is_empty();
         list_items.push(ListItemType::Header("Tables".to_owned()));
 
         list_items.extend(tables.into_iter().map(|t| ListItemType::Entry {
-            sql: schema.tables.get(&t).unwrap().to_owned(),
+            source_sql: schemas.source.tables.get(&t).cloned().unwrap_or_default(),
+            target_sql: schemas.target.tables.get(&t).cloned().unwrap_or_default(),
             title: t,
         }));
 
-        let mut indexes: Vec<String> = schema.indexes.keys().map(|k| k.to_owned()).collect();
+        let mut indexes: Vec<String> = schemas
+            .target
+            .indexes
+            .keys()
+            .chain(schemas.source.indexes.keys())
+            .map(|k| k.to_owned())
+            .collect();
         indexes.sort();
+        indexes.dedup();
         has_items |= !indexes.is_empty();
         list_items.push(ListItemType::Header("Indexes".to_owned()));
 
         list_items.extend(indexes.into_iter().map(|t| ListItemType::Entry {
-            sql: schema.indexes.get(&t).unwrap().to_owned(),
+            source_sql: schemas.source.indexes.get(&t).cloned().unwrap_or_default(),
+            target_sql: schemas.target.indexes.get(&t).cloned().unwrap_or_default(),
             title: t,
         }));
 
@@ -118,7 +142,7 @@ impl SchemaState {
         if has_items {
             state.select(Some(1));
         }
-        SchemaState {
+        DiffState {
             state,
             objects: list_items,
             object_view_width: max_length,
@@ -168,14 +192,17 @@ impl SchemaState {
         self.state.select(Some(adjusted_index));
     }
 
-    fn get_sql(&self) -> Option<&String> {
+    fn get_sql(&self) -> Option<(&String, &String)> {
         if !self.has_items {
             return None;
         }
-        if let ListItemType::Entry { sql, .. } =
-            self.objects.get(self.state.selected().unwrap()).unwrap()
+        if let ListItemType::Entry {
+            source_sql,
+            target_sql,
+            ..
+        } = self.objects.get(self.state.selected().unwrap()).unwrap()
         {
-            return Some(sql);
+            return Some((source_sql, target_sql));
         }
         None
     }

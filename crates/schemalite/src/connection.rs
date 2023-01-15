@@ -327,6 +327,7 @@ fn select_metadata(
     Ok(HashMap::from_iter(results))
 }
 
+#[derive(Clone, Debug)]
 pub struct Metadata {
     pub tables: HashMap<String, String>,
     pub indexes: HashMap<String, String>,
