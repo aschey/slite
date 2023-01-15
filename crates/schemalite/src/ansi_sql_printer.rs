@@ -65,7 +65,7 @@ fn to_ansi_colored(v: &[(Style, &str)], background: Option<Color>) -> String {
                 let color: Color = style.foreground.r.into();
                 let color: AnsiColors = color.into();
                 let colored = match background {
-                    Some(background) => text.color(color).on_color(background).to_string(),
+                    Some(background) => text.black().on_color(background).to_string(),
                     None => text.color(color).to_string(),
                 };
                 output.push_str(&colored);
@@ -73,7 +73,7 @@ fn to_ansi_colored(v: &[(Style, &str)], background: Option<Color>) -> String {
                 let ends_with_newline = text.ends_with('\n');
                 let text = text.replace('\n', "");
                 let mut text = match background {
-                    Some(background) => text.on_color(background).to_string(),
+                    Some(background) => text.black().on_color(background).to_string(),
                     None => text,
                 };
                 if ends_with_newline {
