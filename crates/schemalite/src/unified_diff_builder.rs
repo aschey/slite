@@ -5,6 +5,7 @@ use std::ops::Range;
 use imara_diff::intern::{InternedInput, Interner, Token};
 use imara_diff::Sink;
 use owo_colors::OwoColorize;
+use tracing::error;
 
 use crate::{Color, SqlPrinter};
 
@@ -61,7 +62,11 @@ where
     W: Write,
     T: Hash + Eq + Display,
 {
-    fn print_tokens(&mut self, tokens: &[Token], diff_type: DiffType) {
+    fn print_tokens(
+        &mut self,
+        tokens: &[Token],
+        diff_type: DiffType,
+    ) -> Result<(), std::fmt::Error> {
         for &token in tokens {
             let raw_token = &self.interner[token];
             let line = match diff_type {
@@ -82,17 +87,44 @@ where
                 DiffType::None => self.sql_printer.print(&format!("  {}", raw_token)),
             };
 
-            write!(&mut self.buffer, "{}", line).unwrap();
+            write!(&mut self.buffer, "{}", line)?;
         }
+        Ok(())
     }
 
-    fn flush(&mut self) {
+    fn process_change(
+        &mut self,
+        before: Range<u32>,
+        after: Range<u32>,
+    ) -> Result<(), std::fmt::Error> {
+        if before.start - self.pos > 6 {
+            self.flush()?;
+            self.pos = before.start - 3;
+            self.before_hunk_start = self.pos;
+            self.after_hunk_start = after.start - 3;
+        }
+        self.update_pos(before.start, before.end)?;
+        self.before_hunk_len += before.end - before.start;
+        self.after_hunk_len += after.end - after.start;
+        self.print_tokens(
+            &self.before[before.start as usize..before.end as usize],
+            DiffType::Remove,
+        )?;
+        self.print_tokens(
+            &self.after[after.start as usize..after.end as usize],
+            DiffType::Add,
+        )?;
+
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<(), std::fmt::Error> {
         if self.before_hunk_len == 0 && self.after_hunk_len == 0 {
-            return;
+            return Ok(());
         }
 
         let end = (self.pos + 3).min(self.before.len() as u32);
-        self.update_pos(end, end);
+        self.update_pos(end, end)?;
 
         let header = format!(
             "@@ -{},{} +{},{} @@",
@@ -103,22 +135,25 @@ where
         )
         .cyan()
         .to_string();
-        writeln!(&mut self.dst, "{}", header).unwrap();
-        write!(&mut self.dst, "{}", &self.buffer).unwrap();
+        writeln!(&mut self.dst, "{}", header)?;
+        write!(&mut self.dst, "{}", &self.buffer)?;
         self.buffer.clear();
         self.before_hunk_len = 0;
-        self.after_hunk_len = 0
+        self.after_hunk_len = 0;
+        Ok(())
     }
 
-    fn update_pos(&mut self, print_to: u32, move_to: u32) {
+    fn update_pos(&mut self, print_to: u32, move_to: u32) -> Result<(), std::fmt::Error> {
         self.print_tokens(
             &self.before[self.pos as usize..print_to as usize],
             DiffType::None,
-        );
+        )?;
         let len = print_to - self.pos;
         self.pos = move_to;
         self.before_hunk_len += len;
         self.after_hunk_len += len;
+
+        Ok(())
     }
 }
 
@@ -130,27 +165,15 @@ where
     type Out = W;
 
     fn process_change(&mut self, before: Range<u32>, after: Range<u32>) {
-        if before.start - self.pos > 6 {
-            self.flush();
-            self.pos = before.start - 3;
-            self.before_hunk_start = self.pos;
-            self.after_hunk_start = after.start - 3;
+        if let Err(e) = self.process_change(before, after) {
+            error!("Error processing change: {e}");
         }
-        self.update_pos(before.start, before.end);
-        self.before_hunk_len += before.end - before.start;
-        self.after_hunk_len += after.end - after.start;
-        self.print_tokens(
-            &self.before[before.start as usize..before.end as usize],
-            DiffType::Remove,
-        );
-        self.print_tokens(
-            &self.after[after.start as usize..after.end as usize],
-            DiffType::Add,
-        );
     }
 
     fn finish(mut self) -> Self::Out {
-        self.flush();
+        if let Err(e) = self.flush() {
+            error!("Error flushing: {e}");
+        }
         self.dst
     }
 }

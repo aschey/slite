@@ -25,3 +25,9 @@ pub enum MigrationError {
 #[derive(thiserror::Error, Debug)]
 #[error("Failed to execute query {0}: {1}")]
 pub struct QueryError(pub(crate) String, #[source] pub(crate) rusqlite::Error);
+
+#[derive(thiserror::Error, Debug)]
+pub enum SqlFormatError {
+    #[error("Error formatting SQL {0}: {1}")]
+    TextFormattingFailure(String, #[source] ansi_to_tui::Error),
+}

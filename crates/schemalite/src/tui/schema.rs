@@ -1,9 +1,9 @@
-use crate::{Metadata, SqlPrinter};
+use crate::{error::SqlFormatError, Metadata, SqlPrinter};
 use ansi_to_tui::IntoText;
 use tui::{
     layout::{Constraint, Direction, Layout},
     text::Text,
-    widgets::{Block, Borders, Paragraph, StatefulWidget},
+    widgets::{Block, Borders, Paragraph, StatefulWidget, Wrap},
 };
 
 use super::{Objects, ObjectsState};
@@ -33,8 +33,15 @@ impl StatefulWidget for SchemaView {
         tui::widgets::StatefulWidget::render(Objects::default(), chunks[0], buf, &mut state.state);
 
         tui::widgets::Widget::render(
-            Paragraph::new(state.schema.get(state.state.selected()).unwrap().clone())
-                .block(Block::default().borders(Borders::ALL)),
+            Paragraph::new(
+                state
+                    .schema
+                    .get(state.state.selected())
+                    .expect("Index out of range")
+                    .clone(),
+            )
+            .wrap(Wrap { trim: false })
+            .block(Block::default().borders(Borders::ALL)),
             chunks[1],
             buf,
         );
@@ -48,31 +55,29 @@ pub struct SchemaState {
 }
 
 impl SchemaState {
-    pub fn new(schema: Metadata) -> Self {
-        let mut list_items = vec![];
+    pub fn new(schema: Metadata) -> Result<Self, SqlFormatError> {
         let mut printer = SqlPrinter::default();
-        let mut tables: Vec<String> = schema.tables.keys().map(|k| k.to_owned()).collect();
-        tables.sort();
-        let mut indexes: Vec<String> = schema.indexes.keys().map(|k| k.to_owned()).collect();
-        indexes.sort();
+        let tables: Vec<String> = schema.tables.keys().map(|k| k.to_owned()).collect();
 
-        list_items.extend(tables.clone().into_iter().map(|t| {
-            printer
-                .print(schema.tables.get(&t).unwrap())
-                .into_text()
-                .unwrap()
-        }));
-        list_items.extend(indexes.clone().into_iter().map(|t| {
-            printer
-                .print(schema.indexes.get(&t).unwrap())
-                .into_text()
-                .unwrap()
-        }));
+        let indexes: Vec<String> = schema.indexes.keys().map(|k| k.to_owned()).collect();
+
+        let list_items: Result<Vec<_>, _> = schema
+            .tables
+            .values()
+            .chain(schema.indexes.values())
+            .map(|v| {
+                printer
+                    .print(v)
+                    .into_text()
+                    .map_err(|e| SqlFormatError::TextFormattingFailure(v.to_owned(), e))
+            })
+            .collect();
+
         let state = ObjectsState::new(tables, indexes);
-        Self {
-            schema: list_items,
+        Ok(Self {
+            schema: list_items?,
             state,
-        }
+        })
     }
 
     pub fn next(&mut self) {

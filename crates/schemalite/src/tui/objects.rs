@@ -103,8 +103,8 @@ impl ObjectsState {
         }
         self.adjusted_index = (self.adjusted_index + 1).rem_euclid(self.adjusted_size);
 
-        let mut next_index =
-            (self.state.selected().unwrap() as i32 + 1).rem_euclid(self.objects.len() as i32);
+        let mut next_index = (self.state.selected().expect("Item not selected") as i32 + 1)
+            .rem_euclid(self.objects.len() as i32);
         let real_index = loop {
             match self.objects.get(next_index as usize) {
                 Some(ListItemType::Entry { .. }) => {
@@ -126,8 +126,8 @@ impl ObjectsState {
         }
         self.adjusted_index = (self.adjusted_index - 1).rem_euclid(self.adjusted_size);
 
-        let mut next_index =
-            (self.state.selected().unwrap() as i32 - 1).rem_euclid(self.objects.len() as i32);
+        let mut next_index = (self.state.selected().expect("Item not selected") as i32 - 1)
+            .rem_euclid(self.objects.len() as i32);
         let real_index = loop {
             match self.objects.get(next_index as usize) {
                 Some(ListItemType::Entry { .. }) => {

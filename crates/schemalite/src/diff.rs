@@ -1,7 +1,7 @@
 use crate::{connection::Metadata, error::QueryError, unified_diff_builder::UnifiedDiffBuilder};
 use crate::{Migrator, SqlPrinter};
 use imara_diff::{diff, intern::InternedInput, Algorithm};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 impl Migrator {
     pub fn diff(&mut self) -> Result<String, QueryError> {
@@ -35,13 +35,10 @@ fn build_full_schema_string(metadata: &Metadata) -> String {
     )
 }
 
-fn build_schema_string(metadata: &HashMap<String, String>) -> String {
-    let mut names: Vec<&String> = metadata.keys().collect();
-    names.sort();
-
-    names
-        .into_iter()
-        .map(|n| metadata.get(n).unwrap().to_owned())
+fn build_schema_string(metadata: &BTreeMap<String, String>) -> String {
+    metadata
+        .values()
+        .map(|v| v.to_owned())
         .collect::<Vec<_>>()
         .join("\n")
 }

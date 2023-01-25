@@ -1,4 +1,5 @@
 use clap::{Parser, ValueEnum};
+use color_eyre::Report;
 use rusqlite::{Connection, OpenFlags};
 use schemalite::{Migrator, Options, SqlPrinter};
 use schemalite_cli::run_tui;
@@ -43,15 +44,15 @@ struct Cli {
     command: Option<Command>,
 }
 
-fn main() {
+fn main() -> Result<(), Report> {
+    color_eyre::install()?;
     let cli = Cli::parse();
     let source_db = Connection::open_with_flags(
         "file:memdb123",
         OpenFlags::default() | OpenFlags::SQLITE_OPEN_MEMORY | OpenFlags::SQLITE_OPEN_SHARED_CACHE,
-    )
-    .unwrap();
+    )?;
 
-    source_db.execute_batch(schemas()[1]).unwrap();
+    source_db.execute_batch(schemas()[1])?;
 
     match cli.command {
         Some(Command::Migrate) => {
@@ -70,9 +71,8 @@ fn main() {
                     allow_deletions: true,
                     dry_run: false,
                 },
-            )
-            .unwrap();
-            migrator.migrate().unwrap();
+            )?;
+            migrator.migrate()?;
         }
         Some(Command::DryRun) => {
             Registry::default()
@@ -90,9 +90,8 @@ fn main() {
                     allow_deletions: true,
                     dry_run: true,
                 },
-            )
-            .unwrap();
-            migrator.migrate().unwrap();
+            )?;
+            migrator.migrate()?;
         }
         Some(Command::PrintSchema { from }) => {
             let mut migrator = Migrator::new(
@@ -102,10 +101,9 @@ fn main() {
                     allow_deletions: true,
                     dry_run: true,
                 },
-            )
-            .unwrap();
+            )?;
             let mut sql_printer = SqlPrinter::default();
-            let metadata = migrator.parse_metadata().unwrap();
+            let metadata = migrator.parse_metadata()?;
             let source = match from {
                 SchemaType::Source => metadata.source,
                 SchemaType::Target => metadata.target,
@@ -126,9 +124,8 @@ fn main() {
                     allow_deletions: true,
                     dry_run: true,
                 },
-            )
-            .unwrap();
-            println!("{}", migrator.diff().unwrap());
+            )?;
+            println!("{}", migrator.diff()?);
         }
         Some(Command::Generate) => {
             let migrator = Migrator::new(
@@ -138,9 +135,8 @@ fn main() {
                     allow_deletions: true,
                     dry_run: true,
                 },
-            )
-            .unwrap();
-            let script = migrator.migrate().unwrap();
+            )?;
+            let script = migrator.migrate()?;
             println!("{}", script.join("\n"));
         }
         None => {
@@ -151,11 +147,12 @@ fn main() {
                     allow_deletions: true,
                     dry_run: true,
                 },
-            )
-            .unwrap();
-            run_tui(migrator.parse_metadata().unwrap()).unwrap();
+            )?;
+            run_tui(migrator.parse_metadata()?)?;
         }
     }
+
+    Ok(())
 }
 
 fn schemas() -> [&'static str; 6] {

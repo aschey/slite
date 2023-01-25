@@ -6,6 +6,7 @@ use syntect::{
     highlighting::{Style, ThemeSet},
     parsing::SyntaxSet,
 };
+use tracing::error;
 
 pub(crate) static SYNTAXES: OnceCell<SyntaxSet> = OnceCell::new();
 static THEMES: OnceCell<ThemeSet> = OnceCell::new();
@@ -47,18 +48,24 @@ impl SqlPrinter {
     }
 
     fn print_inner(&mut self, sql: &str, background: Option<Color>) -> String {
-        sql.split('\n')
+        let formatted = sql
+            .split('\n')
             .map(|line| {
                 let line = format!("{}\n", line);
                 let regions = self
                     .highlighter
-                    .highlight_line(&line, SYNTAXES.get().expect("Syntaxes weren't initialized"))
-                    .unwrap();
+                    .highlight_line(&line, SYNTAXES.get().expect("Syntaxes weren't initialized"))?;
 
-                to_ansi_colored(&regions[..], background)
+                Ok(to_ansi_colored(&regions[..], background))
             })
-            .collect::<Vec<_>>()
-            .join("")
+            .collect::<Result<Vec<_>, syntect::Error>>();
+        match formatted {
+            Ok(parts) => parts.join(""),
+            Err(e) => {
+                error!("Error highligting sql {sql}: {e}");
+                sql.to_owned()
+            }
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::BTreeMap, fmt::Display};
 
 use rusqlite::{types::FromSql, Connection, Params, Row, Transaction, TransactionBehavior};
 use tracing::{debug, span, trace, warn, Level};
@@ -324,18 +324,18 @@ fn select_metadata(
     log_level: Level,
     msg: &str,
     sql_printer: &mut SqlPrinter,
-) -> Result<HashMap<String, String>, QueryError> {
+) -> Result<BTreeMap<String, String>, QueryError> {
     let results =
         query::<(String, String), _>(connection, sql, log_level, msg, sql_printer, |row| {
             Ok((row.get(0)?, row.get::<_, String>(1)?.replace("    ", " ")))
         })?;
-    Ok(HashMap::from_iter(results))
+    Ok(BTreeMap::from_iter(results))
 }
 
 #[derive(Clone, Debug)]
 pub struct Metadata {
-    pub tables: HashMap<String, String>,
-    pub indexes: HashMap<String, String>,
+    pub tables: BTreeMap<String, String>,
+    pub indexes: BTreeMap<String, String>,
 }
 
 fn parse_metadata(

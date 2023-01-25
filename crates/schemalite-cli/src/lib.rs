@@ -1,3 +1,4 @@
+use color_eyre::Report;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -5,10 +6,7 @@ use crossterm::{
 };
 use schemalite::tui::{DiffState, DiffView, SchemaState, SchemaView};
 use schemalite::MigrationMetadata;
-use std::{
-    error::Error,
-    io::{self, Stdout},
-};
+use std::io::{self, Stdout};
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -27,14 +25,14 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn new(schema: MigrationMetadata) -> App<'a> {
-        App {
+    fn new(schema: MigrationMetadata) -> Result<App<'a>, Report> {
+        Ok(App {
             titles: vec!["Source", "Target", "Diff"],
             index: 0,
-            source_schema: SchemaState::new(schema.source.clone()),
-            target_schema: SchemaState::new(schema.target.clone()),
-            diff_schema: DiffState::new(schema),
-        }
+            source_schema: SchemaState::new(schema.source.clone())?,
+            target_schema: SchemaState::new(schema.target.clone())?,
+            diff_schema: DiffState::new(schema)?,
+        })
     }
 
     pub fn next(&mut self) {
@@ -50,7 +48,7 @@ impl<'a> App<'a> {
     }
 }
 
-pub fn run_tui(schema: MigrationMetadata) -> Result<(), Box<dyn Error>> {
+pub fn run_tui(schema: MigrationMetadata) -> Result<(), Report> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -59,7 +57,7 @@ pub fn run_tui(schema: MigrationMetadata) -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let app = App::new(schema);
+    let app = App::new(schema)?;
     let res = run_app(&mut terminal, app);
 
     // restore terminal

@@ -1,9 +1,9 @@
-use crate::{sql_diff, MigrationMetadata};
+use crate::{error::SqlFormatError, sql_diff, MigrationMetadata};
 use ansi_to_tui::IntoText;
 use tui::{
     layout::{Constraint, Direction, Layout},
     text::Text,
-    widgets::{Block, Borders, Paragraph, StatefulWidget},
+    widgets::{Block, Borders, Paragraph, StatefulWidget, Wrap},
 };
 
 use super::{Objects, ObjectsState};
@@ -35,9 +35,10 @@ impl StatefulWidget for DiffView {
                 state
                     .schema_diffs
                     .get(state.state.selected())
-                    .unwrap()
+                    .expect("Selected index out of bounds")
                     .clone(),
             )
+            .wrap(Wrap { trim: false })
             .block(Block::default().borders(Borders::ALL)),
             chunks[1],
             buf,
@@ -52,8 +53,7 @@ pub struct DiffState {
 }
 
 impl DiffState {
-    pub fn new(schemas: MigrationMetadata) -> Self {
-        let mut list_items = vec![];
+    pub fn new(schemas: MigrationMetadata) -> Result<Self, SqlFormatError> {
         let mut tables: Vec<String> = schemas
             .target
             .tables
@@ -63,15 +63,6 @@ impl DiffState {
             .collect();
         tables.sort();
         tables.dedup();
-
-        list_items.extend(tables.clone().into_iter().map(|t| {
-            sql_diff(
-                &schemas.source.tables.get(&t).cloned().unwrap_or_default(),
-                &schemas.target.tables.get(&t).cloned().unwrap_or_default(),
-            )
-            .into_text()
-            .unwrap()
-        }));
 
         let mut indexes: Vec<String> = schemas
             .target
@@ -83,21 +74,32 @@ impl DiffState {
         indexes.sort();
         indexes.dedup();
 
-        list_items.extend(indexes.clone().into_iter().map(|t| {
-            sql_diff(
-                &schemas.source.indexes.get(&t).cloned().unwrap_or_default(),
-                &schemas.target.indexes.get(&t).cloned().unwrap_or_default(),
-            )
-            .into_text()
-            .unwrap()
-        }));
+        let list_items: Result<Vec<_>, _> = tables
+            .iter()
+            .map(|t| {
+                let diff = sql_diff(
+                    &schemas.source.tables.get(t).cloned().unwrap_or_default(),
+                    &schemas.target.tables.get(t).cloned().unwrap_or_default(),
+                );
+                diff.into_text()
+                    .map_err(|e| SqlFormatError::TextFormattingFailure(diff, e))
+            })
+            .chain(indexes.iter().map(|t| {
+                let diff = sql_diff(
+                    &schemas.source.indexes.get(t).cloned().unwrap_or_default(),
+                    &schemas.target.indexes.get(t).cloned().unwrap_or_default(),
+                );
+                diff.into_text()
+                    .map_err(|e| SqlFormatError::TextFormattingFailure(diff, e))
+            }))
+            .collect();
 
         let state = ObjectsState::new(tables, indexes);
 
-        Self {
-            schema_diffs: list_items,
+        Ok(Self {
+            schema_diffs: list_items?,
             state,
-        }
+        })
     }
 
     pub fn next(&mut self) {
