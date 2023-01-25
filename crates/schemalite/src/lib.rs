@@ -12,7 +12,7 @@ mod unified_diff_builder;
 pub use diff::*;
 mod color;
 #[cfg(feature = "tui")]
-mod tui;
+pub mod tui;
 pub use color::*;
 mod connection;
 pub use connection::*;
@@ -30,7 +30,7 @@ use tracing::{debug, info, span, Level};
 
 macro_rules! regex {
     ($name: ident, $re: literal $(,) ?) => {
-        static $name: Lazy<Regex> = Lazy::new(|| Regex::new($re).expect("Regex should compile"));
+        static $name: Lazy<Regex> = Lazy::new(|| Regex::new($re).expect("Regex failed to compile"));
     };
 }
 
@@ -286,7 +286,7 @@ impl Migrator {
         info!("Modifying table {modified_table}");
         let temp_table = format!("{modified_table}_migration_new");
         let create_table_regex = Regex::new(&format!(r"\b{}\b", regex::escape(modified_table)))
-            .expect("Regex should compile");
+            .expect("Regex failed to compile");
         let create_temp_table_sql = create_table_regex.replace_all(modified_table_sql, &temp_table);
         tx.execute(&create_temp_table_sql).map_err(|e| {
             MigrationError::QueryFailure(format!("Error creating temp table {temp_table}"), e)

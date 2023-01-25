@@ -2,6 +2,7 @@ use crate::Color;
 use once_cell::sync::OnceCell;
 use owo_colors::{AnsiColors, OwoColorize};
 use syntect::{
+    easy::HighlightLines,
     highlighting::{Style, ThemeSet},
     parsing::SyntaxSet,
 };
@@ -10,21 +11,27 @@ pub(crate) static SYNTAXES: OnceCell<SyntaxSet> = OnceCell::new();
 static THEMES: OnceCell<ThemeSet> = OnceCell::new();
 
 pub struct SqlPrinter {
-    pub(crate) highlighter: syntect::easy::HighlightLines<'static>,
+    pub(crate) highlighter: HighlightLines<'static>,
 }
 
 impl Default for SqlPrinter {
     fn default() -> Self {
         let syntax_set = SYNTAXES.get_or_init(|| {
             syntect::dumps::from_uncompressed_data(include_bytes!("../assets/sql.packdump"))
-                .unwrap()
+                .expect("failed to load syntaxes")
         });
         let themes = THEMES.get_or_init(|| {
             syntect::dumps::from_binary(include_bytes!("../assets/themes.themedump"))
         });
-        let theme = themes.themes.get("ansi").unwrap();
-        let sql_syntax = syntax_set.find_syntax_by_name("SQL").unwrap().to_owned();
-        let highlighter = syntect::easy::HighlightLines::new(&sql_syntax, theme);
+        let theme = themes
+            .themes
+            .get("ansi")
+            .expect("Failed to load ansi theme");
+        let sql_syntax = syntax_set
+            .find_syntax_by_name("SQL")
+            .expect("Failed to load SQL syntax")
+            .to_owned();
+        let highlighter = HighlightLines::new(&sql_syntax, theme);
 
         Self { highlighter }
     }
@@ -45,7 +52,7 @@ impl SqlPrinter {
                 let line = format!("{}\n", line);
                 let regions = self
                     .highlighter
-                    .highlight_line(&line, SYNTAXES.get().unwrap())
+                    .highlight_line(&line, SYNTAXES.get().expect("Syntaxes weren't initialized"))
                     .unwrap();
 
                 to_ansi_colored(&regions[..], background)

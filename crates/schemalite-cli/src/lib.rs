@@ -1,12 +1,9 @@
-mod diff_view;
-mod schema_view;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use diff_view::{DiffState, DiffView};
-use schema_view::{SchemaState, SchemaView};
+use schemalite::tui::{DiffState, DiffView, SchemaState, SchemaView};
 use schemalite::MigrationMetadata;
 use std::{
     error::Error,
@@ -34,9 +31,9 @@ impl<'a> App<'a> {
         App {
             titles: vec!["Source", "Target", "Diff"],
             index: 0,
-            source_schema: SchemaState::from_schema(schema.source.clone()),
-            target_schema: SchemaState::from_schema(schema.target.clone()),
-            diff_schema: DiffState::from_schema(schema),
+            source_schema: SchemaState::new(schema.source.clone()),
+            target_schema: SchemaState::new(schema.target.clone()),
+            diff_schema: DiffState::new(schema),
         }
     }
 
@@ -141,13 +138,13 @@ fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
     f.render_widget(tabs, chunks[0]);
     match app.index {
         0 => {
-            f.render_stateful_widget(SchemaView::new(), chunks[1], &mut app.source_schema);
+            f.render_stateful_widget(SchemaView::default(), chunks[1], &mut app.source_schema);
         }
         1 => {
-            f.render_stateful_widget(SchemaView::new(), chunks[1], &mut app.target_schema);
+            f.render_stateful_widget(SchemaView::default(), chunks[1], &mut app.target_schema);
         }
         2 => {
-            f.render_stateful_widget(DiffView::new(), chunks[1], &mut app.diff_schema);
+            f.render_stateful_widget(DiffView::default(), chunks[1], &mut app.diff_schema);
         }
         _ => unreachable!(),
     };
