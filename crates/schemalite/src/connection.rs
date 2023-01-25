@@ -85,6 +85,7 @@ pub(crate) struct TargetTransaction<'conn> {
     transaction: Transaction<'conn>,
     sql_printer: SqlPrinter,
     modified: bool,
+    statements: Vec<String>,
 }
 
 impl<'conn> TargetTransaction<'conn> {
@@ -97,11 +98,14 @@ impl<'conn> TargetTransaction<'conn> {
             transaction,
             sql_printer: SqlPrinter::default(),
             modified: false,
+            statements: vec![],
         })
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<(), QueryError> {
-        debug!("\n\t{}", self.sql_printer.print(sql));
+        let formatted_sql = self.sql_printer.print(sql);
+        debug!("\n\t{}", formatted_sql);
+        self.statements.push(formatted_sql);
 
         let rows = self
             .transaction
@@ -150,11 +154,12 @@ impl<'conn> TargetTransaction<'conn> {
         )
     }
 
-    pub fn commit(self) -> Result<(), MigrationError> {
+    pub fn commit(self) -> Result<Vec<String>, MigrationError> {
         debug!("Committing transaction");
         self.transaction
             .commit()
-            .map_err(MigrationError::TransactionCommitFailure)
+            .map_err(MigrationError::TransactionCommitFailure)?;
+        Ok(self.statements)
     }
 
     pub fn rollback(self) -> Result<(), MigrationError> {

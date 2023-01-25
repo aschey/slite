@@ -33,6 +33,7 @@ enum Command {
     Migrate,
     DryRun,
     Diff,
+    Generate,
     PrintSchema { from: SchemaType },
 }
 
@@ -128,6 +129,19 @@ fn main() {
             )
             .unwrap();
             println!("{}", migrator.diff().unwrap());
+        }
+        Some(Command::Generate) => {
+            let migrator = Migrator::new(
+                source_db,
+                &[schemas()[2]],
+                Options {
+                    allow_deletions: true,
+                    dry_run: true,
+                },
+            )
+            .unwrap();
+            let script = migrator.migrate().unwrap();
+            println!("{}", script.join("\n"));
         }
         None => {
             let mut migrator = Migrator::new(

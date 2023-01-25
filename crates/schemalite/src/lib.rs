@@ -87,7 +87,7 @@ impl Migrator {
         })
     }
 
-    pub fn migrate(mut self) -> Result<(), MigrationError> {
+    pub fn migrate(mut self) -> Result<Vec<String>, MigrationError> {
         let connection_rc = self.connection.clone();
         let mut connection = connection_rc.as_ref().borrow_mut();
         let mut tx = TargetTransaction::new(&mut connection)?;
@@ -95,9 +95,9 @@ impl Migrator {
         let migration_span = span!(Level::INFO, "Starting migration");
         let _migration_guard = migration_span.entered();
         let migrate_result = self.migrate_inner(&mut tx);
-        match &migrate_result {
+        let result = match migrate_result {
             Ok(()) => {
-                tx.commit()?;
+                let statements = tx.commit()?;
                 if self.modified {
                     connection.vacuum().map_err(|e| {
                         MigrationError::QueryFailure("Failed to vacuum database".to_owned(), e)
@@ -105,11 +105,13 @@ impl Migrator {
                 } else {
                     debug!("No changes detected, not optimizing database");
                 }
+                Ok(statements)
             }
-            Err(_) => {
+            Err(e) => {
                 tx.rollback()?;
+                Err(e)
             }
-        }
+        };
         if self.foreign_keys_enabled {
             connection
                 .execute("PRAGMA foreign_keys = ON")
@@ -118,7 +120,7 @@ impl Migrator {
                 })?;
         }
         info!("Migration completed");
-        migrate_result
+        result
     }
 
     fn migrate_inner(&mut self, tx: &mut TargetTransaction) -> Result<(), MigrationError> {
