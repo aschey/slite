@@ -4,7 +4,7 @@ use tui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::Text,
-    widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
+    widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
 
 use super::{Objects, ObjectsState};
@@ -21,6 +21,15 @@ impl StatefulWidget for SqlView {
         buf: &mut tui::buffer::Buffer,
         state: &mut Self::State,
     ) {
+        let area_height = area.height - 2;
+        if state.height < area_height {
+            state.scroll_position = 0;
+        }
+
+        if state.height >= area_height && state.scroll_position + area_height >= state.height {
+            state.scroll_position = state.height - area_height;
+        }
+
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -45,10 +54,13 @@ impl StatefulWidget for SqlView {
                     .clone(),
             )
             .wrap(Wrap { trim: false })
+            .scroll((state.scroll_position, 0))
             .block(
                 Block::default()
+                    .title("SQL")
                     .borders(Borders::ALL)
-                    .style(Style::default().fg(if state.focused_index == 1 {
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(if state.focused_index == 1 {
                         Color::Green
                     } else {
                         Color::White
@@ -65,6 +77,8 @@ pub struct SqlState {
     sql: Vec<Text<'static>>,
     state: ObjectsState,
     focused_index: usize,
+    height: u16,
+    scroll_position: u16,
 }
 
 impl SqlState {
@@ -137,22 +151,47 @@ impl SqlState {
     }
 
     fn new(sql: Vec<Text<'static>>, state: ObjectsState) -> Self {
+        let height = sql.get(0).map(|s| s.height()).unwrap_or(0) as u16;
         Self {
             sql,
             state,
+            height,
             focused_index: 0,
+            scroll_position: 0,
         }
     }
 
     pub fn next(&mut self) {
-        self.state.next();
+        if self.focused_index == 0 {
+            self.state.next();
+            self.height = self.sql.get(self.state.selected()).unwrap().height() as u16;
+            self.scroll_position = 0;
+        } else {
+            self.scroll_down();
+        }
     }
 
     pub fn previous(&mut self) {
-        self.state.previous();
+        if self.focused_index == 0 {
+            self.state.previous();
+            self.height = self.sql.get(self.state.selected()).unwrap().height() as u16;
+            self.scroll_position = 0;
+        } else {
+            self.scroll_up();
+        }
     }
 
     pub fn toggle_focus(&mut self) {
         self.focused_index = (self.focused_index + 1) % 2;
+    }
+
+    fn scroll_up(&mut self) {
+        if self.scroll_position > 0 {
+            self.scroll_position -= 1;
+        }
+    }
+
+    fn scroll_down(&mut self) {
+        self.scroll_position += 1;
     }
 }

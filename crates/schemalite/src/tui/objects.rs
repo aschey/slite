@@ -1,7 +1,7 @@
 use tui::{
     style::{Color, Modifier, Style},
     text::Text,
-    widgets::{Block, Borders, List, ListItem, ListState, StatefulWidget},
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState, StatefulWidget},
 };
 
 #[derive(Debug, Clone, Default)]
@@ -34,7 +34,8 @@ impl StatefulWidget for Objects {
                     Block::default()
                         .title("Objects")
                         .borders(Borders::ALL)
-                        .style(Style::default().fg(if self.focused {
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(if self.focused {
                             Color::Green
                         } else {
                             Color::White
@@ -56,10 +57,9 @@ pub enum ListItemType {
 impl From<ListItemType> for ListItem<'static> {
     fn from(val: ListItemType) -> Self {
         match val {
-            ListItemType::Entry(title) => ListItem::new(Text::styled(
-                "  ".to_owned() + &title,
-                Style::default().fg(Color::White),
-            )),
+            ListItemType::Entry(title) => {
+                ListItem::new(Text::styled("  ".to_owned() + &title, Style::default()))
+            }
             ListItemType::Header(title) => ListItem::new(Text::styled(
                 title,
                 Style::default()

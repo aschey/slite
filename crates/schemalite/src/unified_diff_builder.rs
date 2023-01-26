@@ -72,14 +72,14 @@ where
             let line = match diff_type {
                 DiffType::Add => format!(
                     "{}{}",
-                    "+ ".white().on_green(),
+                    "+ ".black().on_green(),
                     self.sql_printer
                         .print_on(&format!("{}", raw_token), Color::Green)
                 )
                 .to_string(),
                 DiffType::Remove => format!(
                     "{}{}",
-                    "- ".white().on_red(),
+                    "- ".black().on_red(),
                     self.sql_printer
                         .print_on(&format!("{}", raw_token), Color::Red)
                 )

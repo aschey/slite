@@ -12,7 +12,7 @@ use tui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Tabs},
+    widgets::{Block, BorderType, Borders, Tabs},
     Frame, Terminal,
 };
 
@@ -121,9 +121,13 @@ fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
         .map(|t| Spans::from(vec![Span::styled(*t, Style::default().fg(Color::Green))]))
         .collect();
     let tabs = Tabs::new(titles)
-        .block(Block::default().borders(Borders::ALL).title("Tabs"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded),
+        )
         .select(app.index as usize)
-        .style(Style::default().fg(Color::Cyan))
+        .style(Style::default())
         .highlight_style(
             Style::default()
                 .add_modifier(Modifier::BOLD)
