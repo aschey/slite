@@ -1,6 +1,6 @@
 use tui::{
     style::{Color, Modifier, Style},
-    text::Text,
+    text::{Span, Text},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, StatefulWidget},
 };
 
@@ -29,10 +29,17 @@ impl StatefulWidget for Objects {
 
         tui::widgets::StatefulWidget::render(
             List::new(items)
-                .highlight_style(Style::default().fg(Color::Green))
+                .highlight_style(Style::default().fg(Color::Green).bg(Color::Black))
                 .block(
                     Block::default()
-                        .title("Objects")
+                        .title(Span::styled(
+                            "Objects",
+                            Style::default().add_modifier(if self.focused {
+                                Modifier::BOLD
+                            } else {
+                                Modifier::empty()
+                            }),
+                        ))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(if self.focused {

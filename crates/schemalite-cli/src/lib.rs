@@ -4,7 +4,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use schemalite::tui::{SqlState, SqlView};
+use schemalite::tui::{MigrationState, MigrationView, SqlState, SqlView};
 use schemalite::MigrationMetadata;
 use std::io::{self, Stdout};
 use tui::{
@@ -22,16 +22,18 @@ struct App<'a> {
     source_schema: SqlState,
     target_schema: SqlState,
     diff_schema: SqlState,
+    migration: MigrationState,
 }
 
 impl<'a> App<'a> {
     fn new(schema: MigrationMetadata) -> Result<App<'a>, Report> {
         Ok(App {
-            titles: vec!["Source", "Target", "Diff"],
+            titles: vec!["Source", "Target", "Diff", "Migrate"],
             index: 0,
             source_schema: SqlState::schema(schema.source.clone())?,
             target_schema: SqlState::schema(schema.target.clone())?,
             diff_schema: SqlState::diff(schema)?,
+            migration: MigrationState::default(),
         })
     }
 
@@ -45,18 +47,15 @@ impl<'a> App<'a> {
 }
 
 pub fn run_tui(schema: MigrationMetadata) -> Result<(), Report> {
-    // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // create app and run it
     let app = App::new(schema)?;
     let res = run_app(&mut terminal, app);
 
-    // restore terminal
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -66,7 +65,7 @@ pub fn run_tui(schema: MigrationMetadata) -> Result<(), Report> {
     terminal.show_cursor()?;
 
     if let Err(err) = res {
-        println!("{:?}", err)
+        println!("{err:?}")
     }
 
     Ok(())
@@ -77,28 +76,27 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, mut app: App) -> i
         terminal.draw(|f| ui(f, &mut app))?;
 
         if let Event::Key(key) = event::read()? {
-            match key.code {
-                KeyCode::Char('q') => return Ok(()),
-                KeyCode::Right => app.next_tab(),
-                KeyCode::Left => app.previous_tab(),
-                KeyCode::Down => match app.index {
-                    0 => app.source_schema.next(),
-                    1 => app.target_schema.next(),
-                    2 => app.diff_schema.next(),
-                    _ => {}
-                },
-                KeyCode::Up => match app.index {
-                    0 => app.source_schema.previous(),
-                    1 => app.target_schema.previous(),
-                    2 => app.diff_schema.previous(),
-                    _ => {}
-                },
-                KeyCode::Tab => match app.index {
-                    0 => app.source_schema.toggle_focus(),
-                    1 => app.target_schema.toggle_focus(),
-                    2 => app.diff_schema.toggle_focus(),
-                    _ => {}
-                },
+            match (key.code, app.index) {
+                (KeyCode::Char('q'), _) => return Ok(()),
+                (KeyCode::Left | KeyCode::Right | KeyCode::Tab, 3)
+                    if app.migration.popup_active() =>
+                {
+                    app.migration.toggle_popup_confirm()
+                }
+                (KeyCode::Right, _) => app.next_tab(),
+                (KeyCode::Left, _) => app.previous_tab(),
+                (KeyCode::Down, 0) => app.source_schema.next(),
+                (KeyCode::Down, 1) => app.target_schema.next(),
+                (KeyCode::Down, 2) => app.diff_schema.next(),
+                (KeyCode::Down, 3) => app.migration.next(),
+                (KeyCode::Up, 0) => app.source_schema.previous(),
+                (KeyCode::Up, 1) => app.target_schema.previous(),
+                (KeyCode::Up, 2) => app.diff_schema.previous(),
+                (KeyCode::Up, 3) => app.migration.previous(),
+                (KeyCode::Tab, 0) => app.source_schema.toggle_focus(),
+                (KeyCode::Tab, 1) => app.target_schema.toggle_focus(),
+                (KeyCode::Tab, 2) => app.diff_schema.toggle_focus(),
+                (KeyCode::Enter, 3) => app.migration.execute(),
                 _ => {}
             }
         }
@@ -144,6 +142,7 @@ fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
         2 => {
             f.render_stateful_widget(SqlView::default(), chunks[1], &mut app.diff_schema);
         }
-        _ => unreachable!(),
+        3 => f.render_stateful_widget(MigrationView {}, chunks[1], &mut app.migration),
+        _ => {}
     };
 }

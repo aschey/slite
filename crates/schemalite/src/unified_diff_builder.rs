@@ -74,20 +74,20 @@ where
                     "{}{}",
                     "+ ".black().on_green(),
                     self.sql_printer
-                        .print_on(&format!("{}", raw_token), Color::Green)
+                        .print_on(&format!("{raw_token}"), Color::Green)
                 )
                 .to_string(),
                 DiffType::Remove => format!(
                     "{}{}",
                     "- ".black().on_red(),
                     self.sql_printer
-                        .print_on(&format!("{}", raw_token), Color::Red)
+                        .print_on(&format!("{raw_token}"), Color::Red)
                 )
                 .to_string(),
-                DiffType::None => self.sql_printer.print(&format!("  {}", raw_token)),
+                DiffType::None => self.sql_printer.print(&format!("  {raw_token}")),
             };
 
-            write!(&mut self.buffer, "{}", line)?;
+            write!(&mut self.buffer, "{line}")?;
         }
         Ok(())
     }
@@ -135,7 +135,7 @@ where
         )
         .cyan()
         .to_string();
-        writeln!(&mut self.dst, "{}", header)?;
+        writeln!(&mut self.dst, "{header}")?;
         write!(&mut self.dst, "{}", &self.buffer)?;
         self.buffer.clear();
         self.before_hunk_len = 0;

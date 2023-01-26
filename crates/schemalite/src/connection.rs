@@ -104,7 +104,7 @@ impl<'conn> TargetTransaction<'conn> {
 
     pub fn execute(&mut self, sql: &str) -> Result<(), QueryError> {
         let formatted_sql = self.sql_printer.print(sql);
-        debug!("\n\t{}", formatted_sql);
+        debug!("\n\t{formatted_sql}");
         self.statements.push(formatted_sql);
 
         let rows = self
@@ -245,8 +245,7 @@ where
 {
     event!(
         log_level,
-        "{}\n\t{}",
-        msg,
+        "{msg}\n\t{}",
         sql_printer.print(&replace_sql_params(sql, params.clone()))
     );
 
@@ -288,7 +287,7 @@ fn query<T, F>(
 where
     F: FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
 {
-    event!(log_level, "{}\n\t{}", msg, sql_printer.print(sql));
+    event!(log_level, "{msg}\n\t{}", sql_printer.print(sql));
 
     let mut statement = connection
         .prepare_cached(sql)

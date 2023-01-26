@@ -2,8 +2,8 @@ use crate::{error::SqlFormatError, sql_diff, Metadata, MigrationMetadata, SqlPri
 use ansi_to_tui::IntoText;
 use tui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
-    text::Text,
+    style::{Color, Modifier, Style},
+    text::{Span, Text},
     widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
 
@@ -57,7 +57,14 @@ impl StatefulWidget for SqlView {
             .scroll((state.scroll_position, 0))
             .block(
                 Block::default()
-                    .title("SQL")
+                    .title(Span::styled(
+                        "SQL",
+                        Style::default().add_modifier(if state.focused_index == 1 {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
+                    ))
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(if state.focused_index == 1 {
