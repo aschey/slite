@@ -5,7 +5,16 @@ use tui::{
 };
 
 #[derive(Debug, Clone, Default)]
-pub struct Objects {}
+pub struct Objects {
+    focused: bool,
+}
+
+impl Objects {
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+}
 
 impl StatefulWidget for Objects {
     type State = ObjectsState;
@@ -21,7 +30,16 @@ impl StatefulWidget for Objects {
         tui::widgets::StatefulWidget::render(
             List::new(items)
                 .highlight_style(Style::default().fg(Color::Green))
-                .block(Block::default().title("Objects").borders(Borders::ALL)),
+                .block(
+                    Block::default()
+                        .title("Objects")
+                        .borders(Borders::ALL)
+                        .style(Style::default().fg(if self.focused {
+                            Color::Green
+                        } else {
+                            Color::White
+                        })),
+                ),
             area,
             buf,
             &mut state.state,
@@ -38,7 +56,10 @@ pub enum ListItemType {
 impl From<ListItemType> for ListItem<'static> {
     fn from(val: ListItemType) -> Self {
         match val {
-            ListItemType::Entry(title) => ListItem::new("  ".to_owned() + &title),
+            ListItemType::Entry(title) => ListItem::new(Text::styled(
+                "  ".to_owned() + &title,
+                Style::default().fg(Color::White),
+            )),
             ListItemType::Header(title) => ListItem::new(Text::styled(
                 title,
                 Style::default()

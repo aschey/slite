@@ -1,18 +1,19 @@
-use crate::{error::SqlFormatError, sql_diff, MigrationMetadata};
+use crate::{error::SqlFormatError, sql_diff, Metadata, MigrationMetadata, SqlPrinter};
 use ansi_to_tui::IntoText;
 use tui::{
     layout::{Constraint, Direction, Layout},
+    style::{Color, Style},
     text::Text,
-    widgets::{Block, Borders, Paragraph, StatefulWidget, Wrap},
+    widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
 
 use super::{Objects, ObjectsState};
 
 #[derive(Debug, Clone, Default)]
-pub struct DiffView {}
+pub struct SqlView {}
 
-impl StatefulWidget for DiffView {
-    type State = DiffState;
+impl StatefulWidget for SqlView {
+    type State = SqlState;
 
     fn render(
         self,
@@ -28,18 +29,31 @@ impl StatefulWidget for DiffView {
             ])
             .split(area);
 
-        tui::widgets::StatefulWidget::render(Objects::default(), chunks[0], buf, &mut state.state);
+        StatefulWidget::render(
+            Objects::default().focused(state.focused_index == 0),
+            chunks[0],
+            buf,
+            &mut state.state,
+        );
 
-        tui::widgets::Widget::render(
+        Widget::render(
             Paragraph::new(
                 state
-                    .schema_diffs
+                    .sql
                     .get(state.state.selected())
                     .expect("Selected index out of bounds")
                     .clone(),
             )
             .wrap(Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL)),
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .style(Style::default().fg(if state.focused_index == 1 {
+                        Color::Green
+                    } else {
+                        Color::White
+                    })),
+            ),
             chunks[1],
             buf,
         );
@@ -47,13 +61,14 @@ impl StatefulWidget for DiffView {
 }
 
 #[derive(Debug, Clone)]
-pub struct DiffState {
-    schema_diffs: Vec<Text<'static>>,
+pub struct SqlState {
+    sql: Vec<Text<'static>>,
     state: ObjectsState,
+    focused_index: usize,
 }
 
-impl DiffState {
-    pub fn new(schemas: MigrationMetadata) -> Result<Self, SqlFormatError> {
+impl SqlState {
+    pub fn diff(schemas: MigrationMetadata) -> Result<Self, SqlFormatError> {
         let mut tables: Vec<String> = schemas
             .target
             .tables
@@ -96,10 +111,37 @@ impl DiffState {
 
         let state = ObjectsState::new(tables, indexes);
 
-        Ok(Self {
-            schema_diffs: list_items?,
+        Ok(Self::new(list_items?, state))
+    }
+
+    pub fn schema(schema: Metadata) -> Result<Self, SqlFormatError> {
+        let mut printer = SqlPrinter::default();
+        let tables: Vec<String> = schema.tables.keys().map(|k| k.to_owned()).collect();
+
+        let indexes: Vec<String> = schema.indexes.keys().map(|k| k.to_owned()).collect();
+
+        let list_items: Result<Vec<_>, _> = schema
+            .tables
+            .values()
+            .chain(schema.indexes.values())
+            .map(|v| {
+                printer
+                    .print(v)
+                    .into_text()
+                    .map_err(|e| SqlFormatError::TextFormattingFailure(v.to_owned(), e))
+            })
+            .collect();
+
+        let state = ObjectsState::new(tables, indexes);
+        Ok(Self::new(list_items?, state))
+    }
+
+    fn new(sql: Vec<Text<'static>>, state: ObjectsState) -> Self {
+        Self {
+            sql,
             state,
-        })
+            focused_index: 0,
+        }
     }
 
     pub fn next(&mut self) {
@@ -108,5 +150,9 @@ impl DiffState {
 
     pub fn previous(&mut self) {
         self.state.previous();
+    }
+
+    pub fn toggle_focus(&mut self) {
+        self.focused_index = (self.focused_index + 1) % 2;
     }
 }
