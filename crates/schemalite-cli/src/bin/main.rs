@@ -1,27 +1,11 @@
 use clap::{Parser, ValueEnum};
 use color_eyre::Report;
 use rusqlite::{Connection, OpenFlags};
-use schemalite::{Migrator, Options, SqlPrinter};
+use schemalite::{tui::BroadcastWriter, Migrator, Options, SqlPrinter};
 use schemalite_cli::run_tui;
-use tracing::metadata::LevelFilter;
-use tracing_subscriber::{
-    prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer, Registry,
-};
+use tracing::{metadata::LevelFilter, Level};
+use tracing_subscriber::{filter::Targets, prelude::*, util::SubscriberInitExt, Layer, Registry};
 use tracing_tree::HierarchicalLayer;
-
-struct MemoryWriter;
-
-impl std::io::Write for MemoryWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let buf_len = buf.len();
-        println!("{:?}", std::str::from_utf8(buf).unwrap());
-        Ok(buf_len)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
 
 #[derive(ValueEnum, Clone)]
 enum SchemaType {
@@ -44,7 +28,8 @@ struct Cli {
     command: Option<Command>,
 }
 
-fn main() -> Result<(), Report> {
+#[tokio::main]
+async fn main() -> Result<(), Report> {
     color_eyre::install()?;
     let cli = Cli::parse();
     let source_db = Connection::open_with_flags(
@@ -140,6 +125,16 @@ fn main() -> Result<(), Report> {
             println!("{}", script.join("\n"));
         }
         None => {
+            Registry::default()
+                .with(
+                    HierarchicalLayer::default()
+                        .with_writer(BroadcastWriter::default())
+                        .with_indent_lines(true)
+                        .with_level(false)
+                        .with_filter(Targets::default().with_target("schemalite", Level::TRACE)),
+                )
+                .init();
+
             let mut migrator = Migrator::new(
                 source_db,
                 &[schemas()[2]],
@@ -148,7 +143,21 @@ fn main() -> Result<(), Report> {
                     dry_run: true,
                 },
             )?;
-            run_tui(migrator.parse_metadata()?)?;
+            run_tui(migrator.parse_metadata()?, |options| {
+                Migrator::new(
+                    Connection::open_with_flags(
+                        "file:memdb123",
+                        OpenFlags::default()
+                            | OpenFlags::SQLITE_OPEN_MEMORY
+                            | OpenFlags::SQLITE_OPEN_SHARED_CACHE,
+                    )
+                    .unwrap(),
+                    &[schemas()[2]],
+                    options,
+                )
+                .unwrap()
+            })
+            .await?;
         }
     }
 

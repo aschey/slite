@@ -1,11 +1,15 @@
 use color_eyre::Report;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use schemalite::tui::{MigrationState, MigrationView, SqlState, SqlView};
-use schemalite::MigrationMetadata;
+use futures::StreamExt;
+use schemalite::{error::MigrationError, tui::BroadcastWriter, MigrationMetadata, Options};
+use schemalite::{
+    tui::{MigrationState, MigrationView, SqlState, SqlView},
+    Migrator,
+};
 use std::io::{self, Stdout};
 use tui::{
     backend::CrosstermBackend,
@@ -26,14 +30,17 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn new(schema: MigrationMetadata) -> Result<App<'a>, Report> {
+    fn new(
+        schema: MigrationMetadata,
+        make_migrator: impl Fn(Options) -> Migrator + 'static,
+    ) -> Result<App<'a>, Report> {
         Ok(App {
             titles: vec!["Source", "Target", "Diff", "Migrate"],
             index: 0,
             source_schema: SqlState::schema(schema.source.clone())?,
             target_schema: SqlState::schema(schema.target.clone())?,
             diff_schema: SqlState::diff(schema)?,
-            migration: MigrationState::default(),
+            migration: MigrationState::new(make_migrator),
         })
     }
 
@@ -44,17 +51,55 @@ impl<'a> App<'a> {
     pub fn previous_tab(&mut self) {
         self.index = (self.index - 1).rem_euclid(self.titles.len() as i32);
     }
+
+    fn handle_event(&mut self, event: Event) -> Result<ControlFlow, MigrationError> {
+        if let Event::Key(key) = event {
+            match (key.code, self.index) {
+                (KeyCode::Char('q'), _) => return Ok(ControlFlow::Quit),
+                (KeyCode::Left | KeyCode::Right | KeyCode::Tab, 3)
+                    if self.migration.popup_active() =>
+                {
+                    self.migration.toggle_popup_confirm()
+                }
+                (KeyCode::Right, _) => self.next_tab(),
+                (KeyCode::Left, _) => self.previous_tab(),
+                (KeyCode::Down, 0) => self.source_schema.next(),
+                (KeyCode::Down, 1) => self.target_schema.next(),
+                (KeyCode::Down, 2) => self.diff_schema.next(),
+                (KeyCode::Down, 3) => self.migration.next(),
+                (KeyCode::Up, 0) => self.source_schema.previous(),
+                (KeyCode::Up, 1) => self.target_schema.previous(),
+                (KeyCode::Up, 2) => self.diff_schema.previous(),
+                (KeyCode::Up, 3) => self.migration.previous(),
+                (KeyCode::Tab, 0) => self.source_schema.toggle_focus(),
+                (KeyCode::Tab, 1) => self.target_schema.toggle_focus(),
+                (KeyCode::Tab, 2) => self.diff_schema.toggle_focus(),
+                (KeyCode::Enter, 3) => self.migration.execute()?,
+                _ => {}
+            }
+        }
+
+        Ok(ControlFlow::Continue)
+    }
 }
 
-pub fn run_tui(schema: MigrationMetadata) -> Result<(), Report> {
+enum ControlFlow {
+    Quit,
+    Continue,
+}
+
+pub async fn run_tui(
+    schema: MigrationMetadata,
+    make_migrator: impl Fn(Options) -> Migrator + 'static,
+) -> Result<(), Report> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let app = App::new(schema)?;
-    let res = run_app(&mut terminal, app);
+    let app = App::new(schema, make_migrator)?;
+    let res = run_app(&mut terminal, app).await;
 
     disable_raw_mode()?;
     execute!(
@@ -64,40 +109,32 @@ pub fn run_tui(schema: MigrationMetadata) -> Result<(), Report> {
     )?;
     terminal.show_cursor()?;
 
-    if let Err(err) = res {
-        println!("{err:?}")
-    }
+    res?;
 
     Ok(())
 }
 
-fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, mut app: App) -> io::Result<()> {
+async fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    mut app: App<'static>,
+) -> Result<(), Report> {
+    let mut event_reader = EventStream::new().fuse();
+    let mut log_rx = BroadcastWriter::default().receiver();
     loop {
         terminal.draw(|f| ui(f, &mut app))?;
 
-        if let Event::Key(key) = event::read()? {
-            match (key.code, app.index) {
-                (KeyCode::Char('q'), _) => return Ok(()),
-                (KeyCode::Left | KeyCode::Right | KeyCode::Tab, 3)
-                    if app.migration.popup_active() =>
-                {
-                    app.migration.toggle_popup_confirm()
+        tokio::select! {
+            event = event_reader.next() => {
+                if let Some(event) = event {
+                    if let ControlFlow::Quit = app.handle_event(event?)? {
+                        return Ok(())
+                    }
                 }
-                (KeyCode::Right, _) => app.next_tab(),
-                (KeyCode::Left, _) => app.previous_tab(),
-                (KeyCode::Down, 0) => app.source_schema.next(),
-                (KeyCode::Down, 1) => app.target_schema.next(),
-                (KeyCode::Down, 2) => app.diff_schema.next(),
-                (KeyCode::Down, 3) => app.migration.next(),
-                (KeyCode::Up, 0) => app.source_schema.previous(),
-                (KeyCode::Up, 1) => app.target_schema.previous(),
-                (KeyCode::Up, 2) => app.diff_schema.previous(),
-                (KeyCode::Up, 3) => app.migration.previous(),
-                (KeyCode::Tab, 0) => app.source_schema.toggle_focus(),
-                (KeyCode::Tab, 1) => app.target_schema.toggle_focus(),
-                (KeyCode::Tab, 2) => app.diff_schema.toggle_focus(),
-                (KeyCode::Enter, 3) => app.migration.execute(),
-                _ => {}
+            },
+            log = log_rx.recv() => {
+                if let Ok(log) = log {
+                    app.migration.add_log(log).unwrap();
+                }
             }
         }
     }

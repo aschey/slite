@@ -1,8 +1,14 @@
+use ansi_to_tui::IntoText;
 use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Span, Spans, Text},
     widgets::{Block, BorderType, Borders, Clear, Paragraph, StatefulWidget, Widget, Wrap},
+};
+
+use crate::{
+    error::{MigrationError, SqlFormatError},
+    Migrator, Options,
 };
 
 pub struct MigrationView {}
@@ -82,7 +88,7 @@ impl StatefulWidget for MigrationView {
         );
 
         Widget::render(
-            Paragraph::new(vec![]).block(
+            Paragraph::new(state.formatted_logs.clone()).block(
                 Block::default()
                     .title("Output")
                     .borders(Borders::ALL)
@@ -180,20 +186,24 @@ pub struct MigrationState {
     num_buttons: i32,
     show_popup: bool,
     popup_button_index: i32,
+    logs: String,
+    formatted_logs: Text<'static>,
+    make_migrator: Box<dyn Fn(Options) -> Migrator>,
 }
 
-impl Default for MigrationState {
-    fn default() -> Self {
+impl MigrationState {
+    pub fn new(make_migrator: impl Fn(Options) -> Migrator + 'static) -> Self {
         Self {
+            make_migrator: Box::new(make_migrator),
             selected: 0,
             num_buttons: 4,
             show_popup: false,
             popup_button_index: 0,
+            logs: "".to_owned(),
+            formatted_logs: Text::default(),
         }
     }
-}
 
-impl MigrationState {
     pub fn next(&mut self) {
         if !self.show_popup {
             self.selected = (self.selected + 1).rem_euclid(self.num_buttons);
@@ -206,10 +216,23 @@ impl MigrationState {
         }
     }
 
-    pub fn execute(&mut self) {
-        if self.selected == 2 {
+    pub fn execute(&mut self) -> Result<(), MigrationError> {
+        if self.show_popup {
+            let popup_button_index = self.popup_button_index;
+            self.popup_button_index = 0;
+            self.show_popup = false;
+            if popup_button_index == 1 {
+                let migrator = (self.make_migrator)(Options {
+                    allow_deletions: true,
+                    dry_run: false,
+                });
+                migrator.migrate()?;
+            }
+        } else if self.selected == 2 {
             self.show_popup = true;
         }
+
+        Ok(())
     }
 
     pub fn popup_active(&self) -> bool {
@@ -218,5 +241,14 @@ impl MigrationState {
 
     pub fn toggle_popup_confirm(&mut self) {
         self.popup_button_index = (self.popup_button_index + 1) % 2;
+    }
+
+    pub fn add_log(&mut self, log: String) -> Result<(), SqlFormatError> {
+        self.logs += &log;
+        self.formatted_logs = self
+            .logs
+            .into_text()
+            .map_err(|e| SqlFormatError::TextFormattingFailure(log, e))?;
+        Ok(())
     }
 }
