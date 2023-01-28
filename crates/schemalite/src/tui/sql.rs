@@ -1,13 +1,11 @@
+use super::{panel, BiPanel, BiPanelState, Objects, ObjectsState, Scrollable, ScrollableState};
 use crate::{error::SqlFormatError, sql_diff, Metadata, MigrationMetadata, SqlPrinter};
 use ansi_to_tui::IntoText;
 use tui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    text::{Span, Text},
-    widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget, Wrap},
+    text::Text,
+    widgets::{Paragraph, StatefulWidget, Wrap},
 };
-
-use super::{Objects, ObjectsState, Scrollable, ScrollableState};
 
 #[derive(Debug, Clone, Default)]
 pub struct SqlView {}
@@ -30,7 +28,7 @@ impl StatefulWidget for SqlView {
             .split(area);
 
         StatefulWidget::render(
-            Objects::default().focused(state.focused_index == 0),
+            Objects::new(state.bipanel_state.left_block("Objects")),
             chunks[0],
             buf,
             &mut state.state,
@@ -46,24 +44,7 @@ impl StatefulWidget for SqlView {
                         .clone(),
                 )
                 .wrap(Wrap { trim: false })
-                .block(
-                    Block::default()
-                        .title(Span::styled(
-                            "SQL",
-                            Style::default().add_modifier(if state.focused_index == 1 {
-                                Modifier::BOLD
-                            } else {
-                                Modifier::empty()
-                            }),
-                        ))
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(if state.focused_index == 1 {
-                            Color::Green
-                        } else {
-                            Color::White
-                        })),
-                ),
+                .block(state.bipanel_state.right_block("SQL")),
             ),
             chunks[1],
             buf,
@@ -76,8 +57,8 @@ impl StatefulWidget for SqlView {
 pub struct SqlState {
     sql: Vec<Text<'static>>,
     state: ObjectsState,
-    focused_index: usize,
     scroller: ScrollableState,
+    bipanel_state: BiPanelState,
 }
 
 impl SqlState {
@@ -156,33 +137,43 @@ impl SqlState {
             sql,
             state,
             scroller,
-            focused_index: 0,
+            bipanel_state: BiPanelState::default(),
         }
     }
 
     pub fn next(&mut self) {
-        if self.focused_index == 0 {
-            self.state.next();
-            self.scroller
-                .set_content_height(self.sql.get(self.state.selected()).unwrap().height() as u16);
-            self.scroller.scroll_to_top();
-        } else {
-            self.scroller.scroll_down();
-        }
+        panel::next(self, &self.bipanel_state.clone());
     }
 
     pub fn previous(&mut self) {
-        if self.focused_index == 0 {
-            self.state.previous();
-            self.scroller
-                .set_content_height(self.sql.get(self.state.selected()).unwrap().height() as u16);
-            self.scroller.scroll_to_top();
-        } else {
-            self.scroller.scroll_up();
-        }
+        panel::previous(self, &self.bipanel_state.clone());
     }
 
     pub fn toggle_focus(&mut self) {
-        self.focused_index = (self.focused_index + 1) % 2;
+        self.bipanel_state.toggle_focus();
+    }
+}
+
+impl BiPanel for SqlState {
+    fn left_next(&mut self) {
+        self.state.next();
+        self.scroller
+            .set_content_height(self.sql.get(self.state.selected()).unwrap().height() as u16);
+        self.scroller.scroll_to_top();
+    }
+
+    fn right_next(&mut self) {
+        self.scroller.scroll_down();
+    }
+
+    fn left_previous(&mut self) {
+        self.state.previous();
+        self.scroller
+            .set_content_height(self.sql.get(self.state.selected()).unwrap().height() as u16);
+        self.scroller.scroll_to_top();
+    }
+
+    fn right_previous(&mut self) {
+        self.scroller.scroll_up();
     }
 }

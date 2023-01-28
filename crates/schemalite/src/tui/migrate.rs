@@ -11,7 +11,7 @@ use crate::{
     Migrator, Options,
 };
 
-use super::{Scrollable, ScrollableState};
+use super::{panel, BiPanel, BiPanelState, Scrollable, ScrollableState};
 
 pub struct MigrationView {}
 
@@ -80,24 +80,15 @@ impl StatefulWidget for MigrationView {
                 )),
             ])
             .alignment(Alignment::Center)
-            .block(
-                Block::default()
-                    .title("Controls")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded),
-            ),
+            .block(state.bipanel_state.left_block("Controls")),
             chunks[0],
             buf,
         );
 
         StatefulWidget::render(
             Scrollable::new(
-                Paragraph::new(state.formatted_logs.clone()).block(
-                    Block::default()
-                        .title("Output")
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded),
-                ),
+                Paragraph::new(state.formatted_logs.clone())
+                    .block(state.bipanel_state.right_block("Logs")),
             ),
             chunks[1],
             buf,
@@ -192,10 +183,10 @@ pub struct MigrationState {
     num_buttons: i32,
     show_popup: bool,
     popup_button_index: i32,
-    focused_index: usize,
     logs: String,
     formatted_logs: Text<'static>,
     scroller: ScrollableState,
+    bipanel_state: BiPanelState,
     make_migrator: Box<dyn Fn(Options) -> Migrator>,
 }
 
@@ -204,38 +195,26 @@ impl MigrationState {
         Self {
             make_migrator: Box::new(make_migrator),
             selected: 0,
-            focused_index: 0,
             scroller: ScrollableState::new(0),
             num_buttons: 4,
             show_popup: false,
             popup_button_index: 0,
             logs: "".to_owned(),
+            bipanel_state: BiPanelState::default(),
             formatted_logs: Text::default(),
         }
     }
 
     pub fn next(&mut self) {
-        if self.focused_index == 0 {
-            if !self.show_popup {
-                self.selected = (self.selected + 1).rem_euclid(self.num_buttons);
-            }
-        } else {
-            self.scroller.scroll_down();
-        }
+        panel::next(self, &self.bipanel_state.clone());
     }
 
     pub fn previous(&mut self) {
-        if self.focused_index == 0 {
-            if !self.show_popup {
-                self.selected = (self.selected - 1).rem_euclid(self.num_buttons);
-            }
-        } else {
-            self.scroller.scroll_up();
-        }
+        panel::previous(self, &self.bipanel_state.clone());
     }
 
     pub fn toggle_focus(&mut self) {
-        self.focused_index = (self.focused_index + 1) % 2;
+        self.bipanel_state.toggle_focus();
     }
 
     pub fn execute(&mut self) -> Result<(), MigrationError> {
@@ -244,6 +223,7 @@ impl MigrationState {
             self.popup_button_index = 0;
             self.show_popup = false;
             if popup_button_index == 1 {
+                self.clear_logs();
                 let migrator = (self.make_migrator)(Options {
                     allow_deletions: true,
                     dry_run: false,
@@ -274,5 +254,33 @@ impl MigrationState {
         self.scroller
             .set_content_height(self.formatted_logs.height() as u16);
         Ok(())
+    }
+
+    pub fn clear_logs(&mut self) {
+        self.logs = "".to_owned();
+        self.formatted_logs = Text::default();
+        self.scroller.set_content_height(0);
+    }
+}
+
+impl BiPanel for MigrationState {
+    fn left_next(&mut self) {
+        if !self.show_popup {
+            self.selected = (self.selected + 1).rem_euclid(self.num_buttons);
+        }
+    }
+
+    fn right_next(&mut self) {
+        self.scroller.scroll_down();
+    }
+
+    fn left_previous(&mut self) {
+        if !self.show_popup {
+            self.selected = (self.selected - 1).rem_euclid(self.num_buttons);
+        }
+    }
+
+    fn right_previous(&mut self) {
+        self.scroller.scroll_up();
     }
 }

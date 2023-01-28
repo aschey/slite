@@ -1,22 +1,21 @@
 use tui::{
     style::{Color, Modifier, Style},
-    text::{Span, Text},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState, StatefulWidget},
+    text::Text,
+    widgets::{Block, List, ListItem, ListState, StatefulWidget},
 };
 
-#[derive(Debug, Clone, Default)]
-pub struct Objects {
-    focused: bool,
+#[derive(Debug, Clone)]
+pub struct Objects<'a> {
+    block: Block<'a>,
 }
 
-impl Objects {
-    pub fn focused(mut self, focused: bool) -> Self {
-        self.focused = focused;
-        self
+impl<'a> Objects<'a> {
+    pub fn new(block: Block<'a>) -> Self {
+        Self { block }
     }
 }
 
-impl StatefulWidget for Objects {
+impl<'a> StatefulWidget for Objects<'a> {
     type State = ObjectsState;
 
     fn render(
@@ -30,24 +29,7 @@ impl StatefulWidget for Objects {
         tui::widgets::StatefulWidget::render(
             List::new(items)
                 .highlight_style(Style::default().fg(Color::Green).bg(Color::Black))
-                .block(
-                    Block::default()
-                        .title(Span::styled(
-                            "Objects",
-                            Style::default().add_modifier(if self.focused {
-                                Modifier::BOLD
-                            } else {
-                                Modifier::empty()
-                            }),
-                        ))
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(if self.focused {
-                            Color::Green
-                        } else {
-                            Color::White
-                        })),
-                ),
+                .block(self.block),
             area,
             buf,
             &mut state.state,
