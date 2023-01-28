@@ -46,7 +46,7 @@ async fn main() -> Result<(), Report> {
                     HierarchicalLayer::default()
                         .with_indent_lines(true)
                         .with_level(false)
-                        .with_filter(LevelFilter::INFO),
+                        .with_filter(LevelFilter::TRACE),
                 )
                 .init();
             let migrator = Migrator::new(

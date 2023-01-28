@@ -38,7 +38,7 @@ impl PristineConnection {
         let init_span = span!(Level::TRACE, "Initializing schema in reference database");
         let _guard = init_span.entered();
         for definition in schema {
-            trace!("\n\t{}", self.sql_printer.print(definition.as_ref()));
+            trace!("\n{}", self.sql_printer.print(definition.as_ref()));
             self.connection
                 .execute_batch(definition.as_ref())
                 .map_err(|e| {
@@ -326,7 +326,7 @@ fn select_metadata(
 ) -> Result<BTreeMap<String, String>, QueryError> {
     let results =
         query::<(String, String), _>(connection, sql, log_level, msg, sql_printer, |row| {
-            Ok((row.get(0)?, row.get::<_, String>(1)?.replace("    ", " ")))
+            Ok((row.get(0)?, row.get::<_, String>(1)?))
         })?;
     Ok(BTreeMap::from_iter(results))
 }

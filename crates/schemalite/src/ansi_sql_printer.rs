@@ -51,7 +51,7 @@ impl SqlPrinter {
         let formatted = sql
             .split('\n')
             .map(|line| {
-                let line = format!("{line}\n",);
+                let line = format!("{}\n", line.replace("    ", " "));
                 let regions = self
                     .highlighter
                     .highlight_line(&line, SYNTAXES.get().expect("Syntaxes weren't initialized"))?;

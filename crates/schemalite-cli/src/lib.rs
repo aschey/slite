@@ -74,6 +74,7 @@ impl<'a> App<'a> {
                 (KeyCode::Tab, 0) => self.source_schema.toggle_focus(),
                 (KeyCode::Tab, 1) => self.target_schema.toggle_focus(),
                 (KeyCode::Tab, 2) => self.diff_schema.toggle_focus(),
+                (KeyCode::Tab, 3) => self.migration.toggle_focus(),
                 (KeyCode::Enter, 3) => self.migration.execute()?,
                 _ => {}
             }

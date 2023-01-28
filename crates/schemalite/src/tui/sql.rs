@@ -7,7 +7,7 @@ use tui::{
     widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
 
-use super::{Objects, ObjectsState};
+use super::{Objects, ObjectsState, Scrollable, ScrollableState};
 
 #[derive(Debug, Clone, Default)]
 pub struct SqlView {}
@@ -21,15 +21,6 @@ impl StatefulWidget for SqlView {
         buf: &mut tui::buffer::Buffer,
         state: &mut Self::State,
     ) {
-        let area_height = area.height - 2;
-        if state.height < area_height {
-            state.scroll_position = 0;
-        }
-
-        if state.height >= area_height && state.scroll_position + area_height >= state.height {
-            state.scroll_position = state.height - area_height;
-        }
-
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -45,36 +36,38 @@ impl StatefulWidget for SqlView {
             &mut state.state,
         );
 
-        Widget::render(
-            Paragraph::new(
-                state
-                    .sql
-                    .get(state.state.selected())
-                    .expect("Selected index out of bounds")
-                    .clone(),
-            )
-            .wrap(Wrap { trim: false })
-            .scroll((state.scroll_position, 0))
-            .block(
-                Block::default()
-                    .title(Span::styled(
-                        "SQL",
-                        Style::default().add_modifier(if state.focused_index == 1 {
-                            Modifier::BOLD
+        StatefulWidget::render(
+            Scrollable::new(
+                Paragraph::new(
+                    state
+                        .sql
+                        .get(state.state.selected())
+                        .expect("Selected index out of bounds")
+                        .clone(),
+                )
+                .wrap(Wrap { trim: false })
+                .block(
+                    Block::default()
+                        .title(Span::styled(
+                            "SQL",
+                            Style::default().add_modifier(if state.focused_index == 1 {
+                                Modifier::BOLD
+                            } else {
+                                Modifier::empty()
+                            }),
+                        ))
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(if state.focused_index == 1 {
+                            Color::Green
                         } else {
-                            Modifier::empty()
-                        }),
-                    ))
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(if state.focused_index == 1 {
-                        Color::Green
-                    } else {
-                        Color::White
-                    })),
+                            Color::White
+                        })),
+                ),
             ),
             chunks[1],
             buf,
+            &mut state.scroller,
         );
     }
 }
@@ -84,8 +77,7 @@ pub struct SqlState {
     sql: Vec<Text<'static>>,
     state: ObjectsState,
     focused_index: usize,
-    height: u16,
-    scroll_position: u16,
+    scroller: ScrollableState,
 }
 
 impl SqlState {
@@ -159,46 +151,38 @@ impl SqlState {
 
     fn new(sql: Vec<Text<'static>>, state: ObjectsState) -> Self {
         let height = sql.get(0).map(|s| s.height()).unwrap_or(0) as u16;
+        let scroller = ScrollableState::new(height);
         Self {
             sql,
             state,
-            height,
+            scroller,
             focused_index: 0,
-            scroll_position: 0,
         }
     }
 
     pub fn next(&mut self) {
         if self.focused_index == 0 {
             self.state.next();
-            self.height = self.sql.get(self.state.selected()).unwrap().height() as u16;
-            self.scroll_position = 0;
+            self.scroller
+                .set_content_height(self.sql.get(self.state.selected()).unwrap().height() as u16);
+            self.scroller.scroll_to_top();
         } else {
-            self.scroll_down();
+            self.scroller.scroll_down();
         }
     }
 
     pub fn previous(&mut self) {
         if self.focused_index == 0 {
             self.state.previous();
-            self.height = self.sql.get(self.state.selected()).unwrap().height() as u16;
-            self.scroll_position = 0;
+            self.scroller
+                .set_content_height(self.sql.get(self.state.selected()).unwrap().height() as u16);
+            self.scroller.scroll_to_top();
         } else {
-            self.scroll_up();
+            self.scroller.scroll_up();
         }
     }
 
     pub fn toggle_focus(&mut self) {
         self.focused_index = (self.focused_index + 1) % 2;
-    }
-
-    fn scroll_up(&mut self) {
-        if self.scroll_position > 0 {
-            self.scroll_position -= 1;
-        }
-    }
-
-    fn scroll_down(&mut self) {
-        self.scroll_position += 1;
     }
 }

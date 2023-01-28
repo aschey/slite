@@ -11,6 +11,8 @@ use crate::{
     Migrator, Options,
 };
 
+use super::{Scrollable, ScrollableState};
+
 pub struct MigrationView {}
 
 impl StatefulWidget for MigrationView {
@@ -26,6 +28,7 @@ impl StatefulWidget for MigrationView {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(21), Constraint::Min(0)])
             .split(area);
+
         Widget::render(
             Paragraph::new(vec![
                 Spans::from(Span::styled(
@@ -87,15 +90,18 @@ impl StatefulWidget for MigrationView {
             buf,
         );
 
-        Widget::render(
-            Paragraph::new(state.formatted_logs.clone()).block(
-                Block::default()
-                    .title("Output")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded),
+        StatefulWidget::render(
+            Scrollable::new(
+                Paragraph::new(state.formatted_logs.clone()).block(
+                    Block::default()
+                        .title("Output")
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded),
+                ),
             ),
             chunks[1],
             buf,
+            &mut state.scroller,
         );
 
         if state.show_popup {
@@ -186,8 +192,10 @@ pub struct MigrationState {
     num_buttons: i32,
     show_popup: bool,
     popup_button_index: i32,
+    focused_index: usize,
     logs: String,
     formatted_logs: Text<'static>,
+    scroller: ScrollableState,
     make_migrator: Box<dyn Fn(Options) -> Migrator>,
 }
 
@@ -196,6 +204,8 @@ impl MigrationState {
         Self {
             make_migrator: Box::new(make_migrator),
             selected: 0,
+            focused_index: 0,
+            scroller: ScrollableState::new(0),
             num_buttons: 4,
             show_popup: false,
             popup_button_index: 0,
@@ -205,15 +215,27 @@ impl MigrationState {
     }
 
     pub fn next(&mut self) {
-        if !self.show_popup {
-            self.selected = (self.selected + 1).rem_euclid(self.num_buttons);
+        if self.focused_index == 0 {
+            if !self.show_popup {
+                self.selected = (self.selected + 1).rem_euclid(self.num_buttons);
+            }
+        } else {
+            self.scroller.scroll_down();
         }
     }
 
     pub fn previous(&mut self) {
-        if !self.show_popup {
-            self.selected = (self.selected - 1).rem_euclid(self.num_buttons);
+        if self.focused_index == 0 {
+            if !self.show_popup {
+                self.selected = (self.selected - 1).rem_euclid(self.num_buttons);
+            }
+        } else {
+            self.scroller.scroll_up();
         }
+    }
+
+    pub fn toggle_focus(&mut self) {
+        self.focused_index = (self.focused_index + 1) % 2;
     }
 
     pub fn execute(&mut self) -> Result<(), MigrationError> {
@@ -249,6 +271,8 @@ impl MigrationState {
             .logs
             .into_text()
             .map_err(|e| SqlFormatError::TextFormattingFailure(log, e))?;
+        self.scroller
+            .set_content_height(self.formatted_logs.height() as u16);
         Ok(())
     }
 }
