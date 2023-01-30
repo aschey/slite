@@ -11,7 +11,7 @@ use crate::{
     Migrator, Options,
 };
 
-use super::{panel, BiPanel, BiPanelState, Scrollable, ScrollableState};
+use super::{panel, BiPanel, BiPanelState, BroadcastWriter, Scrollable, ScrollableState};
 
 pub struct MigrationView {}
 
@@ -230,8 +230,37 @@ impl MigrationState {
                 });
                 migrator.migrate()?;
             }
-        } else if self.selected == 2 {
-            self.show_popup = true;
+        } else {
+            match self.selected {
+                0 => {
+                    self.clear_logs();
+                    let migrator = (self.make_migrator)(Options {
+                        allow_deletions: true,
+                        dry_run: true,
+                    });
+                    migrator.migrate()?;
+                }
+                1 => {
+                    self.clear_logs();
+                    BroadcastWriter::disable();
+                    let migrator = (self.make_migrator)(Options {
+                        allow_deletions: true,
+                        dry_run: true,
+                    });
+                    let script = migrator.migrate()?;
+                    for statement in script {
+                        self.add_log(format!("{statement}\n")).unwrap();
+                    }
+                    BroadcastWriter::enable();
+                }
+                2 => {
+                    self.show_popup = true;
+                }
+                3 => {
+                    self.clear_logs();
+                }
+                _ => {}
+            }
         }
 
         Ok(())

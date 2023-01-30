@@ -50,7 +50,6 @@ pub struct Migrator {
     pristine: PristineConnection,
     options: Options,
     foreign_keys_enabled: bool,
-    modified: bool,
 }
 
 impl Migrator {
@@ -59,7 +58,7 @@ impl Migrator {
         schema: &[impl AsRef<str>],
         options: Options,
     ) -> Result<Self, InitializationError> {
-        let mut connection = TargetConnection::new(connection);
+        let mut connection = TargetConnection::new(connection, options.dry_run);
         let foreign_keys_enabled = connection.get_pragma::<i32>("foreign_keys").map_err(|e| {
             InitializationError::QueryFailure(
                 "Failed to retrieve foreign_keys pragma".to_owned(),
@@ -83,22 +82,22 @@ impl Migrator {
             foreign_keys_enabled,
             pristine,
             options,
-            modified: false,
         })
     }
 
     pub fn migrate(mut self) -> Result<Vec<String>, MigrationError> {
         let connection_rc = self.connection.clone();
         let mut connection = connection_rc.as_ref().borrow_mut();
-        let mut tx = TargetTransaction::new(&mut connection)?;
+        let mut tx = TargetTransaction::new(&mut connection, self.options.dry_run)?;
 
         let migration_span = span!(Level::INFO, "Starting migration");
         let _migration_guard = migration_span.entered();
         let migrate_result = self.migrate_inner(&mut tx);
         let result = match migrate_result {
             Ok(()) => {
+                let modified = tx.modified();
                 let statements = tx.commit()?;
-                if self.modified {
+                if modified {
                     connection.vacuum().map_err(|e| {
                         MigrationError::QueryFailure("Failed to vacuum database".to_owned(), e)
                     })?;
@@ -261,12 +260,15 @@ impl Migrator {
         let modify_table_span = span!(Level::INFO, "Modifying tables");
         let _modify_table_guard = modify_table_span.entered();
 
-        let empty = "".to_owned();
         let modified_tables: HashMap<&String, &String> = pristine_metadata
             .tables
             .iter()
             .filter(|(name, sql)| {
-                normalize_sql(metadata.tables.get(*name).unwrap_or(&empty)) != normalize_sql(sql)
+                if let Some(existing) = metadata.tables.get(*name) {
+                    normalize_sql(existing) != normalize_sql(sql)
+                } else {
+                    false
+                }
             })
             .collect();
 

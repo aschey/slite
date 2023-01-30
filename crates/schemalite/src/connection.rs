@@ -86,10 +86,14 @@ pub(crate) struct TargetTransaction<'conn> {
     sql_printer: SqlPrinter,
     modified: bool,
     statements: Vec<String>,
+    dry_run: bool,
 }
 
 impl<'conn> TargetTransaction<'conn> {
-    pub fn new(target_connection: &'conn mut TargetConnection) -> Result<Self, MigrationError> {
+    pub fn new(
+        target_connection: &'conn mut TargetConnection,
+        dry_run: bool,
+    ) -> Result<Self, MigrationError> {
         let transaction = target_connection
             .connection
             .transaction_with_behavior(TransactionBehavior::Exclusive)
@@ -99,6 +103,7 @@ impl<'conn> TargetTransaction<'conn> {
             sql_printer: SqlPrinter::default(),
             modified: false,
             statements: vec![],
+            dry_run,
         })
     }
 
@@ -107,22 +112,26 @@ impl<'conn> TargetTransaction<'conn> {
         debug!("\n\t{formatted_sql}");
         self.statements.push(formatted_sql);
 
-        let rows = self
-            .transaction
-            .execute(sql, [])
-            .map_err(|e| QueryError(sql.to_owned(), e))?;
-
         let normalized = sql.trim().to_uppercase();
         if normalized.starts_with("DROP")
-            || sql.starts_with("ALTER")
-            || sql.starts_with("INSERT")
-            || sql.starts_with("CREATE")
+            || normalized.starts_with("ALTER")
+            || normalized.starts_with("INSERT")
+            || normalized.starts_with("CREATE")
         {
             self.modified = true;
         }
-        if rows > 0 {
-            debug!("Query affected {rows} row(s)");
+
+        if !self.dry_run {
+            let rows = self
+                .transaction
+                .execute(sql, [])
+                .map_err(|e| QueryError(sql.to_owned(), e))?;
+
+            if rows > 0 {
+                debug!("Query affected {rows} row(s)");
+            }
         }
+
         Ok(())
     }
 
@@ -154,6 +163,10 @@ impl<'conn> TargetTransaction<'conn> {
         )
     }
 
+    pub fn modified(&self) -> bool {
+        self.modified
+    }
+
     pub fn commit(self) -> Result<Vec<String>, MigrationError> {
         debug!("Committing transaction");
         self.transaction
@@ -173,33 +186,41 @@ impl<'conn> TargetTransaction<'conn> {
 pub(crate) struct TargetConnection {
     connection: Connection,
     sql_printer: SqlPrinter,
+    dry_run: bool,
 }
 
 impl TargetConnection {
-    pub fn new(connection: Connection) -> Self {
+    pub fn new(connection: Connection, dry_run: bool) -> Self {
         Self {
             connection,
             sql_printer: SqlPrinter::default(),
+            dry_run,
         }
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<(), QueryError> {
         debug!("\n\t{}", self.sql_printer.print(sql));
 
-        let rows = self
-            .connection
-            .execute(sql, [])
-            .map_err(|e| QueryError(sql.to_owned(), e))?;
+        if !self.dry_run {
+            let rows = self
+                .connection
+                .execute(sql, [])
+                .map_err(|e| QueryError(sql.to_owned(), e))?;
 
-        if rows > 0 {
-            debug!("Query affected {rows} row(s)");
+            if rows > 0 {
+                debug!("Query affected {rows} row(s)");
+            }
         }
+
         Ok(())
     }
 
     pub fn vacuum(&mut self) -> Result<(), QueryError> {
         debug!("Optimizing database");
-        self.execute("VACUUM")
+        if !self.dry_run {
+            self.execute("VACUUM")?;
+        }
+        Ok(())
     }
 
     pub fn get_pragma<T: FromSql>(&mut self, pragma: &str) -> Result<T, QueryError> {
