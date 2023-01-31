@@ -1,4 +1,5 @@
 use ansi_to_tui::IntoText;
+use chrono::Local;
 use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -88,7 +89,7 @@ impl StatefulWidget for MigrationView {
         StatefulWidget::render(
             Scrollable::new(
                 Paragraph::new(state.formatted_logs.clone())
-                    .block(state.bipanel_state.right_block("Logs")),
+                    .block(state.bipanel_state.right_block(&state.log_title())),
             ),
             chunks[1],
             buf,
@@ -184,6 +185,7 @@ pub struct MigrationState {
     show_popup: bool,
     popup_button_index: i32,
     logs: String,
+    log_start_time: Option<chrono::DateTime<Local>>,
     formatted_logs: Text<'static>,
     scroller: ScrollableState,
     bipanel_state: BiPanelState,
@@ -202,6 +204,7 @@ impl MigrationState {
             logs: "".to_owned(),
             bipanel_state: BiPanelState::default(),
             formatted_logs: Text::default(),
+            log_start_time: None,
         }
     }
 
@@ -224,6 +227,7 @@ impl MigrationState {
             self.show_popup = false;
             if popup_button_index == 1 {
                 self.clear_logs();
+                self.log_start_time = Some(chrono::Local::now());
                 let migrator = (self.make_migrator)(Options {
                     allow_deletions: true,
                     dry_run: false,
@@ -234,6 +238,7 @@ impl MigrationState {
             match self.selected {
                 0 => {
                     self.clear_logs();
+                    self.log_start_time = Some(chrono::Local::now());
                     let migrator = (self.make_migrator)(Options {
                         allow_deletions: true,
                         dry_run: true,
@@ -242,6 +247,7 @@ impl MigrationState {
                 }
                 1 => {
                     self.clear_logs();
+                    self.log_start_time = Some(chrono::Local::now());
                     BroadcastWriter::disable();
                     let migrator = (self.make_migrator)(Options {
                         allow_deletions: true,
@@ -289,6 +295,14 @@ impl MigrationState {
         self.logs = "".to_owned();
         self.formatted_logs = Text::default();
         self.scroller.set_content_height(0);
+        self.log_start_time = None;
+    }
+
+    fn log_title(&self) -> String {
+        match self.log_start_time {
+            Some(start_time) => format!("Logs {}", start_time.format("%Y-%m-%d %H:%M:%S")),
+            None => "Logs".to_owned(),
+        }
     }
 }
 
