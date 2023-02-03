@@ -1,3 +1,8 @@
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
 use ansi_to_tui::IntoText;
 use chrono::Local;
 use tokio::sync::broadcast;
@@ -14,7 +19,7 @@ use crate::{
     Migrator, Options,
 };
 
-use super::{panel, BiPanel, BiPanelState, BroadcastWriter, Scrollable, ScrollableState};
+use super::{panel, BiPanel, BiPanelState, BroadcastWriter, Button, Scrollable, ScrollableState};
 
 pub struct MigrationView {}
 
@@ -31,56 +36,32 @@ impl StatefulWidget for MigrationView {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(21), Constraint::Min(0)])
             .split(area);
-
+        let controls_enabled = state.controls_enabled.load(Ordering::SeqCst);
         Widget::render(
             Paragraph::new(vec![
-                Spans::from(Span::styled(
-                    "     Dry Run     ",
-                    Style::default()
-                        .bg(Color::Black)
-                        .fg(Color::Blue)
-                        .add_modifier(if state.selected == 0 {
-                            Modifier::BOLD | Modifier::SLOW_BLINK | Modifier::REVERSED
-                        } else {
-                            Modifier::empty()
-                        }),
-                )),
+                Button::new("     Dry Run     ")
+                    .fg(Color::Blue)
+                    .selected(state.selected == 0)
+                    .enabled(controls_enabled)
+                    .build(),
                 Spans::from(""),
-                Spans::from(Span::styled(
-                    " Generate Script ",
-                    Style::default()
-                        .bg(Color::Black)
-                        .fg(Color::Blue)
-                        .add_modifier(if state.selected == 1 {
-                            Modifier::BOLD | Modifier::SLOW_BLINK | Modifier::REVERSED
-                        } else {
-                            Modifier::empty()
-                        }),
-                )),
+                Button::new(" Generate Script ")
+                    .fg(Color::Blue)
+                    .selected(state.selected == 1)
+                    .enabled(controls_enabled)
+                    .build(),
                 Spans::from(""),
-                Spans::from(Span::styled(
-                    "     Migrate     ",
-                    Style::default()
-                        .bg(Color::Black)
-                        .fg(Color::Yellow)
-                        .add_modifier(if state.selected == 2 && !state.show_popup {
-                            Modifier::BOLD | Modifier::SLOW_BLINK | Modifier::REVERSED
-                        } else {
-                            Modifier::empty()
-                        }),
-                )),
+                Button::new("     Migrate     ")
+                    .fg(Color::Yellow)
+                    .selected(state.selected == 2)
+                    .enabled(controls_enabled)
+                    .build(),
                 Spans::from(""),
-                Spans::from(Span::styled(
-                    "  Clear Output   ",
-                    Style::default()
-                        .bg(Color::Black)
-                        .fg(Color::Magenta)
-                        .add_modifier(if state.selected == 3 {
-                            Modifier::BOLD | Modifier::SLOW_BLINK | Modifier::REVERSED
-                        } else {
-                            Modifier::empty()
-                        }),
-                )),
+                Button::new("  Clear Output   ")
+                    .fg(Color::Magenta)
+                    .selected(state.selected == 3)
+                    .enabled(controls_enabled)
+                    .build(),
             ])
             .alignment(Alignment::Center)
             .block(state.bipanel_state.left_block("Controls")),
@@ -192,6 +173,7 @@ pub struct MigrationState {
     scroller: ScrollableState,
     bipanel_state: BiPanelState,
     migration_script_tx: broadcast::Sender<String>,
+    controls_enabled: Arc<AtomicBool>,
     make_migrator: Box<dyn Fn(Options) -> Migrator>,
 }
 
@@ -210,6 +192,7 @@ impl MigrationState {
             formatted_logs: Text::default(),
             log_start_time: None,
             migration_script_tx,
+            controls_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -226,6 +209,10 @@ impl MigrationState {
     }
 
     pub fn execute(&mut self) -> Result<(), MigrationError> {
+        if !self.controls_enabled.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
         if self.show_popup {
             let popup_button_index = self.popup_button_index;
             self.popup_button_index = 0;
@@ -252,10 +239,13 @@ impl MigrationState {
                         allow_deletions: true,
                         dry_run: true,
                     });
+                    let controls_enabled = self.controls_enabled.clone();
+                    controls_enabled.store(false, Ordering::SeqCst);
                     tokio::task::spawn_blocking(move || {
                         if let Err(e) = migrator.migrate() {
                             error!("{e}");
                         }
+                        controls_enabled.store(true, Ordering::SeqCst);
                     });
                 }
                 1 => {
@@ -267,6 +257,8 @@ impl MigrationState {
                         dry_run: true,
                     });
                     let migration_script_tx = self.migration_script_tx.clone();
+                    let controls_enabled = self.controls_enabled.clone();
+                    controls_enabled.store(false, Ordering::SeqCst);
                     tokio::task::spawn_blocking(move || {
                         if let Err(e) = migrator.migrate_with_callback(|statement| {
                             migration_script_tx.send(statement).ok();
@@ -275,6 +267,7 @@ impl MigrationState {
                             error!("{e}");
                         };
                         BroadcastWriter::enable();
+                        controls_enabled.store(true, Ordering::SeqCst);
                     });
                 }
                 2 => {

@@ -396,19 +396,28 @@ impl Migrator {
             )
         })?;
 
-        let old_indexes = metadata
+        let old_indexes: Vec<_> = metadata
             .indexes
             .keys()
-            .filter(|k| !pristine_metadata.indexes.contains_key(*k));
+            .filter(|k| !pristine_metadata.indexes.contains_key(*k))
+            .collect();
+
+        if old_indexes.is_empty() {
+            info!("No indexes to drop");
+        }
+
         for index in old_indexes {
             info!("Dropping index {index}");
             tx.execute(&format!("DROP INDEX {index}")).map_err(|e| {
                 MigrationError::QueryFailure(format!("Failed to drop index {index}"), e)
             })?;
         }
+        let mut index_updated = false;
+        let mut index_created = false;
         for (index_name, sql) in &pristine_metadata.indexes {
             match metadata.indexes.get(index_name) {
                 Some(old_index) if normalize_sql(sql) != normalize_sql(old_index) => {
+                    index_updated = true;
                     info!("Updating index {index_name}");
                     tx.execute(&format!("DROP INDEX {index_name}"))
                         .map_err(|e| {
@@ -425,6 +434,7 @@ impl Migrator {
                     })?;
                 }
                 None => {
+                    index_created = true;
                     info!("Creating index {index_name}");
                     tx.execute(sql).map_err(|e| {
                         MigrationError::QueryFailure(
@@ -435,6 +445,12 @@ impl Migrator {
                 }
                 _ => {}
             }
+        }
+        if !index_created {
+            info!("No indexes to create");
+        }
+        if !index_updated {
+            info!("No indexes to update");
         }
 
         Ok(())

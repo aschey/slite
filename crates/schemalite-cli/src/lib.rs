@@ -27,6 +27,7 @@ struct App<'a> {
     target_schema: SqlState,
     diff_schema: SqlState,
     migration: MigrationState,
+    enter_pressed: bool,
 }
 
 impl<'a> App<'a> {
@@ -41,6 +42,7 @@ impl<'a> App<'a> {
             target_schema: SqlState::schema(schema.target.clone())?,
             diff_schema: SqlState::diff(schema)?,
             migration: MigrationState::new(make_migrator),
+            enter_pressed: false,
         })
     }
 
@@ -54,31 +56,33 @@ impl<'a> App<'a> {
 
     fn handle_event(&mut self, event: Event) -> Result<ControlFlow, MigrationError> {
         if let Event::Key(key) = event {
-            if key.kind == KeyEventKind::Press {
-                match (key.code, self.index) {
-                    (KeyCode::Char('q'), _) => return Ok(ControlFlow::Quit),
-                    (KeyCode::Left | KeyCode::Right | KeyCode::Tab, 3)
-                        if self.migration.popup_active() =>
-                    {
-                        self.migration.toggle_popup_confirm()
-                    }
-                    (KeyCode::Right, _) => self.next_tab(),
-                    (KeyCode::Left, _) => self.previous_tab(),
-                    (KeyCode::Down, 0) => self.source_schema.next(),
-                    (KeyCode::Down, 1) => self.target_schema.next(),
-                    (KeyCode::Down, 2) => self.diff_schema.next(),
-                    (KeyCode::Down, 3) => self.migration.next(),
-                    (KeyCode::Up, 0) => self.source_schema.previous(),
-                    (KeyCode::Up, 1) => self.target_schema.previous(),
-                    (KeyCode::Up, 2) => self.diff_schema.previous(),
-                    (KeyCode::Up, 3) => self.migration.previous(),
-                    (KeyCode::Tab, 0) => self.source_schema.toggle_focus(),
-                    (KeyCode::Tab, 1) => self.target_schema.toggle_focus(),
-                    (KeyCode::Tab, 2) => self.diff_schema.toggle_focus(),
-                    (KeyCode::Tab, 3) => self.migration.toggle_focus(),
-                    (KeyCode::Enter, 3) => self.migration.execute()?,
-                    _ => {}
+            match (key.code, self.index, key.kind) {
+                (KeyCode::Char('q'), _, KeyEventKind::Press) => return Ok(ControlFlow::Quit),
+                (KeyCode::Left | KeyCode::Right | KeyCode::Tab, 3, KeyEventKind::Press)
+                    if self.migration.popup_active() =>
+                {
+                    self.migration.toggle_popup_confirm()
                 }
+                (KeyCode::Right, _, KeyEventKind::Press) => self.next_tab(),
+                (KeyCode::Left, _, KeyEventKind::Press) => self.previous_tab(),
+                (KeyCode::Down, 0, KeyEventKind::Press) => self.source_schema.next(),
+                (KeyCode::Down, 1, KeyEventKind::Press) => self.target_schema.next(),
+                (KeyCode::Down, 2, KeyEventKind::Press) => self.diff_schema.next(),
+                (KeyCode::Down, 3, KeyEventKind::Press) => self.migration.next(),
+                (KeyCode::Up, 0, KeyEventKind::Press) => self.source_schema.previous(),
+                (KeyCode::Up, 1, KeyEventKind::Press) => self.target_schema.previous(),
+                (KeyCode::Up, 2, KeyEventKind::Press) => self.diff_schema.previous(),
+                (KeyCode::Up, 3, KeyEventKind::Press) => self.migration.previous(),
+                (KeyCode::Tab, 0, KeyEventKind::Press) => self.source_schema.toggle_focus(),
+                (KeyCode::Tab, 1, KeyEventKind::Press) => self.target_schema.toggle_focus(),
+                (KeyCode::Tab, 2, KeyEventKind::Press) => self.diff_schema.toggle_focus(),
+                (KeyCode::Tab, 3, KeyEventKind::Press) => self.migration.toggle_focus(),
+                (KeyCode::Enter, 3, KeyEventKind::Release) => self.enter_pressed = false,
+                (KeyCode::Enter, 3, KeyEventKind::Press) if !self.enter_pressed => {
+                    self.enter_pressed = true;
+                    self.migration.execute()?
+                }
+                _ => {}
             }
         }
 
