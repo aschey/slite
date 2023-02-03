@@ -121,8 +121,7 @@ async fn main() -> Result<(), Report> {
                     dry_run: true,
                 },
             )?;
-            let script = migrator.migrate()?;
-            println!("{}", script.join("\n"));
+            migrator.migrate_with_callback(|statement| println!("{statement}"))?;
         }
         None => {
             Registry::default()

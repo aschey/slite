@@ -25,7 +25,11 @@ use error::{InitializationError, MigrationError, QueryError};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use rusqlite::Connection;
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    sync::{Arc, Mutex},
+};
 use tracing::{debug, info, span, Level};
 
 macro_rules! regex {
@@ -46,7 +50,7 @@ pub struct Options {
 }
 
 pub struct Migrator {
-    connection: Rc<RefCell<TargetConnection>>,
+    connection: Arc<Mutex<TargetConnection>>,
     pristine: PristineConnection,
     options: Options,
     foreign_keys_enabled: bool,
@@ -78,17 +82,24 @@ impl Migrator {
         let mut pristine = PristineConnection::new()?;
         pristine.initialize_schema(schema)?;
         Ok(Self {
-            connection: Rc::new(RefCell::new(connection)),
+            connection: Arc::new(Mutex::new(connection)),
             foreign_keys_enabled,
             pristine,
             options,
         })
     }
 
-    pub fn migrate(mut self) -> Result<Vec<String>, MigrationError> {
+    pub fn migrate(self) -> Result<(), MigrationError> {
+        self.migrate_with_callback(|_| {})
+    }
+
+    pub fn migrate_with_callback(
+        mut self,
+        on_script: impl Fn(String),
+    ) -> Result<(), MigrationError> {
         let connection_rc = self.connection.clone();
-        let mut connection = connection_rc.as_ref().borrow_mut();
-        let mut tx = TargetTransaction::new(&mut connection, self.options.dry_run)?;
+        let mut connection = connection_rc.lock().expect("Failed to lock mutex");
+        let mut tx = TargetTransaction::new(&mut connection, self.options.dry_run, on_script)?;
 
         let migration_span = span!(Level::INFO, "Starting migration");
         let _migration_guard = migration_span.entered();
@@ -96,7 +107,7 @@ impl Migrator {
         let result = match migrate_result {
             Ok(()) => {
                 let modified = tx.modified();
-                let statements = tx.commit()?;
+                tx.commit()?;
                 if modified {
                     connection.vacuum().map_err(|e| {
                         MigrationError::QueryFailure("Failed to vacuum database".to_owned(), e)
@@ -104,7 +115,7 @@ impl Migrator {
                 } else {
                     debug!("No changes detected, not optimizing database");
                 }
-                Ok(statements)
+                Ok(())
             }
             Err(e) => {
                 tx.rollback()?;
@@ -122,7 +133,10 @@ impl Migrator {
         result
     }
 
-    fn migrate_inner(&mut self, tx: &mut TargetTransaction) -> Result<(), MigrationError> {
+    fn migrate_inner<F>(&mut self, tx: &mut TargetTransaction<F>) -> Result<(), MigrationError>
+    where
+        F: Fn(String),
+    {
         if self.foreign_keys_enabled {
             tx.execute("PRAGMA defer_foreign_keys = TRUE")
                 .map_err(|e| {
@@ -163,11 +177,14 @@ impl Migrator {
         Ok(())
     }
 
-    fn migrate_tables(
+    fn migrate_tables<F>(
         &mut self,
-        tx: &mut TargetTransaction,
+        tx: &mut TargetTransaction<F>,
         pristine_metadata: &Metadata,
-    ) -> Result<(), MigrationError> {
+    ) -> Result<(), MigrationError>
+    where
+        F: Fn(String),
+    {
         let table_span = span!(Level::INFO, "Migrating tables");
         let _table_guard = table_span.entered();
 
@@ -185,12 +202,15 @@ impl Migrator {
         Ok(())
     }
 
-    fn create_new_tables(
+    fn create_new_tables<F>(
         &mut self,
-        tx: &mut TargetTransaction,
+        tx: &mut TargetTransaction<F>,
         pristine_metadata: &Metadata,
         metadata: &Metadata,
-    ) -> Result<(), MigrationError> {
+    ) -> Result<(), MigrationError>
+    where
+        F: Fn(String),
+    {
         let create_table_span = span!(Level::INFO, "Creating tables");
         let _create_table_guard = create_table_span.entered();
 
@@ -212,12 +232,15 @@ impl Migrator {
         Ok(())
     }
 
-    fn drop_old_tables(
+    fn drop_old_tables<F>(
         &mut self,
-        tx: &mut TargetTransaction,
+        tx: &mut TargetTransaction<F>,
         pristine_metadata: &Metadata,
         metadata: &Metadata,
-    ) -> Result<(), MigrationError> {
+    ) -> Result<(), MigrationError>
+    where
+        F: Fn(String),
+    {
         let drop_table_span = span!(Level::INFO, "Dropping tables");
         let _drop_table_guard = drop_table_span.entered();
 
@@ -251,12 +274,15 @@ impl Migrator {
         Ok(())
     }
 
-    fn update_tables(
+    fn update_tables<F>(
         &mut self,
-        tx: &mut TargetTransaction,
+        tx: &mut TargetTransaction<F>,
         pristine_metadata: &Metadata,
         metadata: &Metadata,
-    ) -> Result<(), MigrationError> {
+    ) -> Result<(), MigrationError>
+    where
+        F: Fn(String),
+    {
         let modify_table_span = span!(Level::INFO, "Modifying tables");
         let _modify_table_guard = modify_table_span.entered();
 
@@ -281,12 +307,15 @@ impl Migrator {
         Ok(())
     }
 
-    fn update_table(
+    fn update_table<F>(
         &mut self,
-        tx: &mut TargetTransaction,
+        tx: &mut TargetTransaction<F>,
         modified_table: &str,
         modified_table_sql: &str,
-    ) -> Result<(), MigrationError> {
+    ) -> Result<(), MigrationError>
+    where
+        F: Fn(String),
+    {
         info!("Modifying table {modified_table}");
         let temp_table = format!("{modified_table}_migration_new");
         let create_table_regex = Regex::new(&format!(r"\b{}\b", regex::escape(modified_table)))
@@ -349,11 +378,14 @@ impl Migrator {
         Ok(())
     }
 
-    fn migrate_indexes(
+    fn migrate_indexes<F>(
         &mut self,
-        tx: &mut TargetTransaction,
+        tx: &mut TargetTransaction<F>,
         pristine_metadata: &Metadata,
-    ) -> Result<(), MigrationError> {
+    ) -> Result<(), MigrationError>
+    where
+        F: Fn(String),
+    {
         let index_span = span!(Level::INFO, "Migrating indexes");
         let _index_guard = index_span.entered();
 
@@ -411,7 +443,11 @@ impl Migrator {
     pub fn parse_metadata(&mut self) -> Result<MigrationMetadata, QueryError> {
         Ok(MigrationMetadata {
             target: self.pristine.parse_metadata()?,
-            source: self.connection.borrow_mut().parse_metadata()?,
+            source: self
+                .connection
+                .lock()
+                .expect("Failed to lock mutex")
+                .parse_metadata()?,
         })
     }
 }

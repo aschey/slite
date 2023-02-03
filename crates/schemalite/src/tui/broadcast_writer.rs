@@ -28,7 +28,7 @@ impl Default for BroadcastWriter {
     fn default() -> Self {
         let log_sender = LOG_SENDER
             .get_or_init(|| {
-                let (tx, _) = broadcast::channel(1024);
+                let (tx, _) = broadcast::channel(32);
                 tx
             })
             .clone();

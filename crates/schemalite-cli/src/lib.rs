@@ -1,6 +1,6 @@
 use color_eyre::Report;
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode},
+    event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -54,29 +54,31 @@ impl<'a> App<'a> {
 
     fn handle_event(&mut self, event: Event) -> Result<ControlFlow, MigrationError> {
         if let Event::Key(key) = event {
-            match (key.code, self.index) {
-                (KeyCode::Char('q'), _) => return Ok(ControlFlow::Quit),
-                (KeyCode::Left | KeyCode::Right | KeyCode::Tab, 3)
-                    if self.migration.popup_active() =>
-                {
-                    self.migration.toggle_popup_confirm()
+            if key.kind == KeyEventKind::Press {
+                match (key.code, self.index) {
+                    (KeyCode::Char('q'), _) => return Ok(ControlFlow::Quit),
+                    (KeyCode::Left | KeyCode::Right | KeyCode::Tab, 3)
+                        if self.migration.popup_active() =>
+                    {
+                        self.migration.toggle_popup_confirm()
+                    }
+                    (KeyCode::Right, _) => self.next_tab(),
+                    (KeyCode::Left, _) => self.previous_tab(),
+                    (KeyCode::Down, 0) => self.source_schema.next(),
+                    (KeyCode::Down, 1) => self.target_schema.next(),
+                    (KeyCode::Down, 2) => self.diff_schema.next(),
+                    (KeyCode::Down, 3) => self.migration.next(),
+                    (KeyCode::Up, 0) => self.source_schema.previous(),
+                    (KeyCode::Up, 1) => self.target_schema.previous(),
+                    (KeyCode::Up, 2) => self.diff_schema.previous(),
+                    (KeyCode::Up, 3) => self.migration.previous(),
+                    (KeyCode::Tab, 0) => self.source_schema.toggle_focus(),
+                    (KeyCode::Tab, 1) => self.target_schema.toggle_focus(),
+                    (KeyCode::Tab, 2) => self.diff_schema.toggle_focus(),
+                    (KeyCode::Tab, 3) => self.migration.toggle_focus(),
+                    (KeyCode::Enter, 3) => self.migration.execute()?,
+                    _ => {}
                 }
-                (KeyCode::Right, _) => self.next_tab(),
-                (KeyCode::Left, _) => self.previous_tab(),
-                (KeyCode::Down, 0) => self.source_schema.next(),
-                (KeyCode::Down, 1) => self.target_schema.next(),
-                (KeyCode::Down, 2) => self.diff_schema.next(),
-                (KeyCode::Down, 3) => self.migration.next(),
-                (KeyCode::Up, 0) => self.source_schema.previous(),
-                (KeyCode::Up, 1) => self.target_schema.previous(),
-                (KeyCode::Up, 2) => self.diff_schema.previous(),
-                (KeyCode::Up, 3) => self.migration.previous(),
-                (KeyCode::Tab, 0) => self.source_schema.toggle_focus(),
-                (KeyCode::Tab, 1) => self.target_schema.toggle_focus(),
-                (KeyCode::Tab, 2) => self.diff_schema.toggle_focus(),
-                (KeyCode::Tab, 3) => self.migration.toggle_focus(),
-                (KeyCode::Enter, 3) => self.migration.execute()?,
-                _ => {}
             }
         }
 
@@ -121,6 +123,7 @@ async fn run_app(
 ) -> Result<(), Report> {
     let mut event_reader = EventStream::new().fuse();
     let mut log_rx = BroadcastWriter::default().receiver();
+    let mut migration_script_rx = app.migration.subscribe_script();
     loop {
         terminal.draw(|f| ui(f, &mut app))?;
 
@@ -135,6 +138,11 @@ async fn run_app(
             log = log_rx.recv() => {
                 if let Ok(log) = log {
                     app.migration.add_log(log).unwrap();
+                }
+            }
+            script = migration_script_rx.recv() => {
+                if let Ok(script) = script {
+                    app.migration.add_log(format!("{script}\n")).unwrap();
                 }
             }
         }

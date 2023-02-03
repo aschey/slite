@@ -1,5 +1,7 @@
 use ansi_to_tui::IntoText;
 use chrono::Local;
+use tokio::sync::broadcast;
+use tracing::error;
 use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -189,11 +191,13 @@ pub struct MigrationState {
     formatted_logs: Text<'static>,
     scroller: ScrollableState,
     bipanel_state: BiPanelState,
+    migration_script_tx: broadcast::Sender<String>,
     make_migrator: Box<dyn Fn(Options) -> Migrator>,
 }
 
 impl MigrationState {
     pub fn new(make_migrator: impl Fn(Options) -> Migrator + 'static) -> Self {
+        let (migration_script_tx, _) = broadcast::channel(32);
         Self {
             make_migrator: Box::new(make_migrator),
             selected: 0,
@@ -205,6 +209,7 @@ impl MigrationState {
             bipanel_state: BiPanelState::default(),
             formatted_logs: Text::default(),
             log_start_time: None,
+            migration_script_tx,
         }
     }
 
@@ -232,7 +237,11 @@ impl MigrationState {
                     allow_deletions: true,
                     dry_run: false,
                 });
-                migrator.migrate()?;
+                tokio::task::spawn_blocking(move || {
+                    if let Err(e) = migrator.migrate() {
+                        error!("{e}");
+                    }
+                });
             }
         } else {
             match self.selected {
@@ -243,7 +252,11 @@ impl MigrationState {
                         allow_deletions: true,
                         dry_run: true,
                     });
-                    migrator.migrate()?;
+                    tokio::task::spawn_blocking(move || {
+                        if let Err(e) = migrator.migrate() {
+                            error!("{e}");
+                        }
+                    });
                 }
                 1 => {
                     self.clear_logs();
@@ -253,11 +266,16 @@ impl MigrationState {
                         allow_deletions: true,
                         dry_run: true,
                     });
-                    let script = migrator.migrate()?;
-                    for statement in script {
-                        self.add_log(format!("{statement}\n")).unwrap();
-                    }
-                    BroadcastWriter::enable();
+                    let migration_script_tx = self.migration_script_tx.clone();
+                    tokio::task::spawn_blocking(move || {
+                        if let Err(e) = migrator.migrate_with_callback(|statement| {
+                            migration_script_tx.send(statement).ok();
+                        }) {
+                            BroadcastWriter::enable();
+                            error!("{e}");
+                        };
+                        BroadcastWriter::enable();
+                    });
                 }
                 2 => {
                     self.show_popup = true;
@@ -296,6 +314,10 @@ impl MigrationState {
         self.formatted_logs = Text::default();
         self.scroller.set_content_height(0);
         self.log_start_time = None;
+    }
+
+    pub fn subscribe_script(&self) -> broadcast::Receiver<String> {
+        self.migration_script_tx.subscribe()
     }
 
     fn log_title(&self) -> String {

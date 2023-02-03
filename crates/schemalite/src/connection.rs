@@ -81,18 +81,25 @@ impl PristineConnection {
     }
 }
 
-pub(crate) struct TargetTransaction<'conn> {
+pub(crate) struct TargetTransaction<'conn, F>
+where
+    F: Fn(String),
+{
     transaction: Transaction<'conn>,
     sql_printer: SqlPrinter,
     modified: bool,
-    statements: Vec<String>,
+    on_script: F,
     dry_run: bool,
 }
 
-impl<'conn> TargetTransaction<'conn> {
+impl<'conn, F> TargetTransaction<'conn, F>
+where
+    F: Fn(String),
+{
     pub fn new(
         target_connection: &'conn mut TargetConnection,
         dry_run: bool,
+        on_script: F,
     ) -> Result<Self, MigrationError> {
         let transaction = target_connection
             .connection
@@ -102,7 +109,7 @@ impl<'conn> TargetTransaction<'conn> {
             transaction,
             sql_printer: SqlPrinter::default(),
             modified: false,
-            statements: vec![],
+            on_script,
             dry_run,
         })
     }
@@ -110,7 +117,7 @@ impl<'conn> TargetTransaction<'conn> {
     pub fn execute(&mut self, sql: &str) -> Result<(), QueryError> {
         let formatted_sql = self.sql_printer.print(sql);
         debug!("\n\t{formatted_sql}");
-        self.statements.push(formatted_sql);
+        (self.on_script)(formatted_sql);
 
         let normalized = sql.trim().to_uppercase();
         if normalized.starts_with("DROP")
@@ -139,9 +146,9 @@ impl<'conn> TargetTransaction<'conn> {
         parse_metadata(&self.transaction, Level::DEBUG, "", &mut self.sql_printer)
     }
 
-    pub fn query<T, F>(&mut self, sql: &str, f: F) -> Result<Vec<T>, QueryError>
+    pub fn query<T, R>(&mut self, sql: &str, f: R) -> Result<Vec<T>, QueryError>
     where
-        F: FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
+        R: FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
     {
         query(
             &self.transaction,
@@ -167,12 +174,12 @@ impl<'conn> TargetTransaction<'conn> {
         self.modified
     }
 
-    pub fn commit(self) -> Result<Vec<String>, MigrationError> {
+    pub fn commit(self) -> Result<(), MigrationError> {
         debug!("Committing transaction");
         self.transaction
             .commit()
             .map_err(MigrationError::TransactionCommitFailure)?;
-        Ok(self.statements)
+        Ok(())
     }
 
     pub fn rollback(self) -> Result<(), MigrationError> {

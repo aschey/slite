@@ -4,4 +4,4 @@ name = "gen-syntax"
 version = "0.1.0"
 
 [dependencies]
-syntect = {version = "5.0.0"}
+syntect = {version = "5.0.0", default-features = false, features = ["default-fancy"]}
