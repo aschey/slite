@@ -12,3 +12,5 @@ mod panel;
 pub use panel::*;
 mod button;
 pub use button::*;
+mod app;
+pub use app::*;
