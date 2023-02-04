@@ -5,7 +5,7 @@ use std::sync::{
 
 use ansi_to_tui::IntoText;
 use chrono::Local;
-use tokio::{sync::broadcast, task};
+use tokio::{sync::mpsc, task};
 use tracing::error;
 use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -16,10 +16,13 @@ use tui::{
 
 use crate::{
     error::{MigrationError, SqlFormatError},
-    Migrator, Options,
+    Options,
 };
 
-use super::{panel, BiPanel, BiPanelState, BroadcastWriter, Button, Scrollable, ScrollableState};
+use super::{
+    panel, BiPanel, BiPanelState, BroadcastWriter, Button, Message, MigratorFactory, Scrollable,
+    ScrollableState,
+};
 
 pub struct MigrationView {}
 
@@ -162,12 +165,6 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-#[derive(Clone)]
-pub enum MigrationMessage {
-    Text(String),
-    Completed,
-}
-
 pub struct MigrationState {
     selected: i32,
     num_buttons: i32,
@@ -178,16 +175,15 @@ pub struct MigrationState {
     formatted_logs: Text<'static>,
     scroller: ScrollableState,
     bipanel_state: BiPanelState,
-    migration_script_tx: broadcast::Sender<MigrationMessage>,
+    message_tx: mpsc::Sender<Message>,
     controls_enabled: Arc<AtomicBool>,
-    make_migrator: Box<dyn Fn(Options) -> Migrator>,
+    migrator_factory: MigratorFactory,
 }
 
 impl MigrationState {
-    pub fn new(make_migrator: impl Fn(Options) -> Migrator + 'static) -> Self {
-        let (migration_script_tx, _) = broadcast::channel(32);
+    pub fn new(migrator_factory: MigratorFactory, message_tx: mpsc::Sender<Message>) -> Self {
         Self {
-            make_migrator: Box::new(make_migrator),
+            migrator_factory,
             selected: 0,
             scroller: ScrollableState::new(0),
             num_buttons: 4,
@@ -197,7 +193,7 @@ impl MigrationState {
             bipanel_state: BiPanelState::default(),
             formatted_logs: Text::default(),
             log_start_time: None,
-            migration_script_tx,
+            message_tx,
             controls_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
@@ -226,11 +222,11 @@ impl MigrationState {
             if popup_button_index == 1 {
                 self.clear_logs();
                 self.log_start_time = Some(chrono::Local::now());
-                let migrator = (self.make_migrator)(Options {
+                let migrator = self.migrator_factory.create_migrator(Options {
                     allow_deletions: true,
                     dry_run: false,
                 });
-                let migration_script_tx = self.migration_script_tx.clone();
+                let migration_script_tx = self.message_tx.clone();
                 let controls_enabled = self.controls_enabled.clone();
                 controls_enabled.store(false, Ordering::SeqCst);
                 task::spawn_blocking(move || {
@@ -238,7 +234,7 @@ impl MigrationState {
                         error!("{e}");
                     }
                     controls_enabled.store(true, Ordering::SeqCst);
-                    if let Err(e) = migration_script_tx.send(MigrationMessage::Completed) {
+                    if let Err(e) = migration_script_tx.blocking_send(Message::MigrationCompleted) {
                         error!("{e}");
                     }
                 });
@@ -248,11 +244,11 @@ impl MigrationState {
                 0 => {
                     self.clear_logs();
                     self.log_start_time = Some(chrono::Local::now());
-                    let migrator = (self.make_migrator)(Options {
+                    let migrator = self.migrator_factory.create_migrator(Options {
                         allow_deletions: true,
                         dry_run: true,
                     });
-                    let migration_script_tx = self.migration_script_tx.clone();
+                    let migration_script_tx = self.message_tx.clone();
                     let controls_enabled = self.controls_enabled.clone();
                     controls_enabled.store(false, Ordering::SeqCst);
                     task::spawn_blocking(move || {
@@ -260,7 +256,8 @@ impl MigrationState {
                             error!("{e}");
                         }
                         controls_enabled.store(true, Ordering::SeqCst);
-                        if let Err(e) = migration_script_tx.send(MigrationMessage::Completed) {
+                        if let Err(e) = migration_script_tx.blocking_send(Message::ProcessCompleted)
+                        {
                             error!("{e}");
                         }
                     });
@@ -269,17 +266,17 @@ impl MigrationState {
                     self.clear_logs();
                     self.log_start_time = Some(chrono::Local::now());
                     BroadcastWriter::disable();
-                    let migrator = (self.make_migrator)(Options {
+                    let migrator = self.migrator_factory.create_migrator(Options {
                         allow_deletions: true,
                         dry_run: true,
                     });
-                    let migration_script_tx = self.migration_script_tx.clone();
+                    let migration_script_tx = self.message_tx.clone();
                     let controls_enabled = self.controls_enabled.clone();
                     controls_enabled.store(false, Ordering::SeqCst);
                     task::spawn_blocking(move || {
                         if let Err(e) = migrator.migrate_with_callback(|statement| {
                             if let Err(e) =
-                                migration_script_tx.send(MigrationMessage::Text(statement))
+                                migration_script_tx.blocking_send(Message::Log(statement))
                             {
                                 error!("{e}");
                             }
@@ -289,7 +286,8 @@ impl MigrationState {
                         };
                         BroadcastWriter::enable();
                         controls_enabled.store(true, Ordering::SeqCst);
-                        if let Err(e) = migration_script_tx.send(MigrationMessage::Completed) {
+                        if let Err(e) = migration_script_tx.blocking_send(Message::ProcessCompleted)
+                        {
                             error!("{e}");
                         }
                     });
@@ -333,8 +331,8 @@ impl MigrationState {
         self.log_start_time = None;
     }
 
-    pub fn subscribe_script(&self) -> broadcast::Receiver<MigrationMessage> {
-        self.migration_script_tx.subscribe()
+    pub fn migrator_factory(&mut self) -> &mut MigratorFactory {
+        &mut self.migrator_factory
     }
 
     fn log_title(&self) -> String {

@@ -1,5 +1,7 @@
+use super::{MigrationState, MigrationView, MigratorFactory, SqlState, SqlView};
+use crate::error::{MigrationError, SqlFormatError};
 use std::marker::PhantomData;
-use tokio::sync::broadcast;
+use tokio::sync::mpsc;
 use tui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -7,16 +9,17 @@ use tui::{
     widgets::{Block, BorderType, Borders, StatefulWidget, Tabs, Widget},
 };
 
-use crate::{
-    error::{MigrationError, SqlFormatError},
-    MigrationMetadata, Migrator, Options,
-};
-
-use super::{MigrationMessage, MigrationState, MigrationView, SqlState, SqlView};
-
 pub enum ControlFlow {
     Quit,
     Continue,
+}
+
+#[derive(Clone, Debug)]
+pub enum Message {
+    Log(String),
+    ProcessCompleted,
+    MigrationCompleted,
+    FileChanged,
 }
 
 #[derive(Default)]
@@ -99,17 +102,27 @@ pub struct AppState<'a> {
 
 impl<'a> AppState<'a> {
     pub fn new(
-        schema: MigrationMetadata,
-        make_migrator: impl Fn(Options) -> Migrator + 'static,
+        migrator_factory: MigratorFactory,
+        message_tx: mpsc::Sender<Message>,
     ) -> Result<AppState<'a>, SqlFormatError> {
+        let schema = migrator_factory.metadata();
         Ok(AppState {
             titles: vec!["Source", "Target", "Diff", "Migrate"],
             index: 0,
             source_schema: SqlState::schema(schema.source.clone())?,
             target_schema: SqlState::schema(schema.target.clone())?,
-            diff_schema: SqlState::diff(schema)?,
-            migration: MigrationState::new(make_migrator),
+            diff_schema: SqlState::diff(schema.clone())?,
+            migration: MigrationState::new(migrator_factory, message_tx),
         })
+    }
+
+    pub fn refresh(&mut self) -> Result<(), SqlFormatError> {
+        self.migration.migrator_factory().update_schemas();
+        let schema = self.migration.migrator_factory().metadata();
+        self.source_schema = SqlState::schema(schema.source.clone())?;
+        self.target_schema = SqlState::schema(schema.target.clone())?;
+        self.diff_schema = SqlState::diff(schema.clone())?;
+        Ok(())
     }
 
     pub fn next_tab(&mut self) {
@@ -155,10 +168,6 @@ impl<'a> AppState<'a> {
         }
 
         Ok(ControlFlow::Continue)
-    }
-
-    pub fn subscribe_script(&self) -> broadcast::Receiver<MigrationMessage> {
-        self.migration.subscribe_script()
     }
 
     pub fn add_log(&mut self, log: String) -> Result<(), SqlFormatError> {

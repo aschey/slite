@@ -14,3 +14,5 @@ mod button;
 pub use button::*;
 mod app;
 pub use app::*;
+mod migrator_factory;
+pub use migrator_factory::*;

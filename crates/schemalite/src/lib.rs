@@ -50,27 +50,48 @@ pub struct Options {
 }
 
 pub struct Migrator {
-    connection: Arc<Mutex<TargetConnection>>,
+    target_connection: Arc<Mutex<TargetConnection>>,
     pristine: PristineConnection,
     options: Options,
     foreign_keys_enabled: bool,
 }
 
+pub fn read_sql_files(sql_dir: impl AsRef<std::path::Path>) -> Vec<String> {
+    let paths: Vec<_> = ignore::WalkBuilder::new(sql_dir)
+        .max_depth(Some(5))
+        .filter_entry(|entry| {
+            let path = entry.path();
+            path.is_dir() || path.extension().map(|e| e == "sql").unwrap_or(false)
+        })
+        .build()
+        .filter_map(|dir_result| dir_result.ok().map(|d| d.path().to_path_buf()))
+        .collect();
+
+    paths
+        .iter()
+        .filter(|p| p.is_file())
+        .map(|p| std::fs::read_to_string(p).unwrap())
+        .collect()
+}
+
 impl Migrator {
     pub fn new(
-        connection: Connection,
         schema: &[impl AsRef<str>],
+        target_connection: Connection,
         options: Options,
     ) -> Result<Self, InitializationError> {
-        let mut connection = TargetConnection::new(connection, options.dry_run);
-        let foreign_keys_enabled = connection.get_pragma::<i32>("foreign_keys").map_err(|e| {
-            InitializationError::QueryFailure(
-                "Failed to retrieve foreign_keys pragma".to_owned(),
-                e,
-            )
-        })? == 1;
+        let mut target_connection = TargetConnection::new(target_connection, options.dry_run);
+        let foreign_keys_enabled = target_connection
+            .get_pragma::<i32>("foreign_keys")
+            .map_err(|e| {
+                InitializationError::QueryFailure(
+                    "Failed to retrieve foreign_keys pragma".to_owned(),
+                    e,
+                )
+            })?
+            == 1;
         if foreign_keys_enabled {
-            connection
+            target_connection
                 .execute("PRAGMA foreign_keys = OFF")
                 .map_err(|e| {
                     InitializationError::QueryFailure(
@@ -82,7 +103,7 @@ impl Migrator {
         let mut pristine = PristineConnection::new()?;
         pristine.initialize_schema(schema)?;
         Ok(Self {
-            connection: Arc::new(Mutex::new(connection)),
+            target_connection: Arc::new(Mutex::new(target_connection)),
             foreign_keys_enabled,
             pristine,
             options,
@@ -97,7 +118,7 @@ impl Migrator {
         mut self,
         on_script: impl Fn(String),
     ) -> Result<(), MigrationError> {
-        let connection_rc = self.connection.clone();
+        let connection_rc = self.target_connection.clone();
         let mut connection = connection_rc.lock().expect("Failed to lock mutex");
         let mut tx = TargetTransaction::new(&mut connection, self.options.dry_run, on_script)?;
 
@@ -458,9 +479,9 @@ impl Migrator {
 
     pub fn parse_metadata(&mut self) -> Result<MigrationMetadata, QueryError> {
         Ok(MigrationMetadata {
-            target: self.pristine.parse_metadata()?,
-            source: self
-                .connection
+            source: self.pristine.parse_metadata()?,
+            target: self
+                .target_connection
                 .lock()
                 .expect("Failed to lock mutex")
                 .parse_metadata()?,
@@ -468,6 +489,7 @@ impl Migrator {
     }
 }
 
+#[derive(Clone, Debug, Default)]
 pub struct MigrationMetadata {
     pub source: Metadata,
     pub target: Metadata,

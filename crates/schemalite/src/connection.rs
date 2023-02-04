@@ -359,7 +359,7 @@ fn select_metadata(
     Ok(BTreeMap::from_iter(results))
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Metadata {
     pub tables: BTreeMap<String, String>,
     pub indexes: BTreeMap<String, String>,

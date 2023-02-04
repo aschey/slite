@@ -13,8 +13,11 @@ path = "src/bin/main.rs"
 [dependencies]
 clap = {version = "4.0.32", features = ["derive"]}
 color-eyre = "0.6.2"
+confique = "0.2.2"
 crossterm = {version = "0.26.0", features = ["event-stream"]}
 futures = "0.3.25"
+notify = {version = "5.1.0", default_features = false, features = ["macos_fsevent"]}
+notify-debouncer-mini = {version = "0.2.1", default_features = false}
 rusqlite = {version = "0.28.0", features = ["bundled"]}
 schemalite = {path = "../schemalite", features = ["pretty-print", "diff", "tui", "crossterm-events"]}
 tokio = {version = "1.24.2", features = ["rt-multi-thread", "macros", "sync"]}

@@ -34,22 +34,24 @@ impl StatefulWidget for SqlView {
             &mut state.state,
         );
 
-        StatefulWidget::render(
-            Scrollable::new(
-                Paragraph::new(
-                    state
-                        .sql
-                        .get(state.state.selected())
-                        .expect("Selected index out of bounds")
-                        .clone(),
-                )
-                .wrap(Wrap { trim: false })
-                .block(state.bipanel_state.right_block("SQL")),
-            ),
-            chunks[1],
-            buf,
-            &mut state.scroller,
-        );
+        if !state.sql.is_empty() {
+            StatefulWidget::render(
+                Scrollable::new(
+                    Paragraph::new(
+                        state
+                            .sql
+                            .get(state.state.selected())
+                            .expect("Selected index out of bounds")
+                            .clone(),
+                    )
+                    .wrap(Wrap { trim: false })
+                    .block(state.bipanel_state.right_block("SQL")),
+                ),
+                chunks[1],
+                buf,
+                &mut state.scroller,
+            );
+        }
     }
 }
 
@@ -156,6 +158,10 @@ impl SqlState {
 
 impl BiPanel for SqlState {
     fn left_next(&mut self) {
+        if self.sql.is_empty() {
+            return;
+        }
+
         self.state.next();
         self.scroller
             .set_content_height(self.sql.get(self.state.selected()).unwrap().height() as u16);
@@ -167,6 +173,10 @@ impl BiPanel for SqlState {
     }
 
     fn left_previous(&mut self) {
+        if self.sql.is_empty() {
+            return;
+        }
+
         self.state.previous();
         self.scroller
             .set_content_height(self.sql.get(self.state.selected()).unwrap().height() as u16);

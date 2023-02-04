@@ -25,14 +25,14 @@ fn test_schema_migration(#[values(0, 1, 2, 3, 4)] from: usize, #[values(0, 1, 2,
         let connection = get_connection(&format!("{from}{to}error"));
         let connection2 = get_connection(&format!("{from}{to}error"));
         connection.execute_batch(schemas[from]).unwrap();
-        let migrator = Migrator::new(connection, &[schemas[to]], Options::default()).unwrap();
+        let migrator = Migrator::new(&[schemas[to]], connection, Options::default()).unwrap();
         let result = migrator.migrate();
         assert!(matches!(result, Err(MigrationError::DataLoss(_))));
         assert_schema_equal(&connection2, schemas[from]);
     }
     let migrator = Migrator::new(
-        connection,
         &[schemas[to]],
+        connection,
         Options {
             allow_deletions: need_allow_deletions,
             ..Default::default()
@@ -58,7 +58,7 @@ fn test_data_migration() {
     statement.execute([0, 0]).unwrap();
     statement.execute([1, 100]).unwrap();
 
-    let migrator = Migrator::new(get_connection(), &[schemas[2]], Options::default()).unwrap();
+    let migrator = Migrator::new(&[schemas[2]], get_connection(), Options::default()).unwrap();
     migrator.migrate().unwrap();
     let connection = get_connection();
 
@@ -100,8 +100,8 @@ fn test_data_migration() {
     assert_eq!(("100".to_owned(), 9876), rows.get(3).unwrap().clone());
 
     let migrator = Migrator::new(
-        get_connection(),
         &[schemas[3]],
+        get_connection(),
         Options {
             allow_deletions: true,
             ..Default::default()
@@ -124,7 +124,7 @@ fn test_data_migration() {
     assert_eq!(("100".to_owned(), 1234), rows.get(2).unwrap().clone());
     assert_eq!(("100".to_owned(), 9876), rows.get(3).unwrap().clone());
 
-    let migrator = Migrator::new(get_connection(), &[schemas[4]], Options::default()).unwrap();
+    let migrator = Migrator::new(&[schemas[4]], get_connection(), Options::default()).unwrap();
     migrator.migrate().unwrap();
 
     let mut statement = connection
@@ -145,8 +145,8 @@ fn test_data_migration() {
         )
         .unwrap();
     let migrator = Migrator::new(
-        get_connection(),
         &[schemas[1]],
+        get_connection(),
         Options {
             allow_deletions: true,
             ..Default::default()

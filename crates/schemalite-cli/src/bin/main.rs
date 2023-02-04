@@ -1,7 +1,12 @@
+use std::path::PathBuf;
+
 use clap::{Parser, ValueEnum};
 use color_eyre::Report;
-use rusqlite::{Connection, OpenFlags};
-use schemalite::{tui::BroadcastWriter, Migrator, Options, SqlPrinter};
+use rusqlite::Connection;
+use schemalite::{
+    tui::{BroadcastWriter, MigratorFactory},
+    Migrator, Options, SqlPrinter,
+};
 use schemalite_cli::run_tui;
 use tracing::{metadata::LevelFilter, Level};
 use tracing_subscriber::{filter::Targets, prelude::*, util::SubscriberInitExt, Layer, Registry};
@@ -26,21 +31,41 @@ enum Command {
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
+    #[arg(short, long, value_parser=source_parser)]
+    source: Option<PathBuf>,
+    #[arg(short, long, value_parser=destination_parser)]
+    target: Option<PathBuf>,
+}
+
+fn source_parser(val: &str) -> Result<PathBuf, Report> {
+    let path = PathBuf::from(val.to_owned());
+    match path.try_exists() {
+        Ok(true) => Ok(path),
+        Ok(false) => Err(color_eyre::eyre::eyre!("Source path does not exist")),
+        Err(e) => Err(color_eyre::eyre::eyre!("{e}")),
+    }
+}
+
+fn destination_parser(val: &str) -> Result<PathBuf, Report> {
+    let path = PathBuf::from(val.to_owned());
+    match (path.try_exists(), path.is_file()) {
+        (Ok(true), false) => Err(color_eyre::eyre::eyre!("Destination must be a file")),
+        (Ok(_), _) => Ok(path),
+        (Err(e), _) => Err(color_eyre::eyre::eyre!("{e}")),
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Report> {
     color_eyre::install()?;
     let cli = Cli::parse();
-    let source_db = Connection::open_with_flags(
-        "file:memdb123",
-        OpenFlags::default() | OpenFlags::SQLITE_OPEN_MEMORY | OpenFlags::SQLITE_OPEN_SHARED_CACHE,
-    )?;
 
-    source_db.execute_batch(schemas()[1])?;
+    let source = cli.source.unwrap_or_default();
+    let target = cli.target.unwrap_or_default();
 
     match cli.command {
         Some(Command::Migrate) => {
+            let target_db = Connection::open(target)?;
             Registry::default()
                 .with(
                     HierarchicalLayer::default()
@@ -50,8 +75,8 @@ async fn main() -> Result<(), Report> {
                 )
                 .init();
             let migrator = Migrator::new(
-                source_db,
                 &[schemas()[2]],
+                target_db,
                 Options {
                     allow_deletions: true,
                     dry_run: false,
@@ -60,6 +85,7 @@ async fn main() -> Result<(), Report> {
             migrator.migrate()?;
         }
         Some(Command::DryRun) => {
+            let target_db = Connection::open(target)?;
             Registry::default()
                 .with(
                     HierarchicalLayer::default()
@@ -69,8 +95,8 @@ async fn main() -> Result<(), Report> {
                 )
                 .init();
             let migrator = Migrator::new(
-                source_db,
                 &[schemas()[2]],
+                target_db,
                 Options {
                     allow_deletions: true,
                     dry_run: true,
@@ -79,9 +105,10 @@ async fn main() -> Result<(), Report> {
             migrator.migrate()?;
         }
         Some(Command::PrintSchema { from }) => {
+            let source_db = Connection::open(target)?;
             let mut migrator = Migrator::new(
-                source_db,
                 &[schemas()[2]],
+                source_db,
                 Options {
                     allow_deletions: true,
                     dry_run: true,
@@ -102,9 +129,10 @@ async fn main() -> Result<(), Report> {
             }
         }
         Some(Command::Diff) => {
+            let target_db = Connection::open(target)?;
             let mut migrator = Migrator::new(
-                source_db,
                 &[schemas()[2]],
+                target_db,
                 Options {
                     allow_deletions: true,
                     dry_run: true,
@@ -113,9 +141,10 @@ async fn main() -> Result<(), Report> {
             println!("{}", migrator.diff()?);
         }
         Some(Command::Generate) => {
+            let target_db = Connection::open(target)?;
             let migrator = Migrator::new(
-                source_db,
                 &[schemas()[2]],
+                target_db,
                 Options {
                     allow_deletions: true,
                     dry_run: true,
@@ -134,29 +163,7 @@ async fn main() -> Result<(), Report> {
                 )
                 .init();
 
-            let mut migrator = Migrator::new(
-                source_db,
-                &[schemas()[2]],
-                Options {
-                    allow_deletions: true,
-                    dry_run: true,
-                },
-            )?;
-            run_tui(migrator.parse_metadata()?, |options| {
-                Migrator::new(
-                    Connection::open_with_flags(
-                        "file:memdb123",
-                        OpenFlags::default()
-                            | OpenFlags::SQLITE_OPEN_MEMORY
-                            | OpenFlags::SQLITE_OPEN_SHARED_CACHE,
-                    )
-                    .unwrap(),
-                    &[schemas()[2]],
-                    options,
-                )
-                .unwrap()
-            })
-            .await?;
+            run_tui(MigratorFactory::new(source, target)).await?;
         }
     }
 

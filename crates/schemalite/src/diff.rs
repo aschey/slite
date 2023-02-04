@@ -15,7 +15,7 @@ impl Migrator {
 }
 
 pub fn sql_diff(source: &str, target: &str) -> String {
-    let input = InternedInput::new(source, target);
+    let input = InternedInput::new(target, source);
     let diff_result = diff(
         Algorithm::Histogram,
         &input,
