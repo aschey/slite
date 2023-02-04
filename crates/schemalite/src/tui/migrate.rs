@@ -5,7 +5,7 @@ use std::sync::{
 
 use ansi_to_tui::IntoText;
 use chrono::Local;
-use tokio::sync::broadcast;
+use tokio::{sync::broadcast, task};
 use tracing::error;
 use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -162,6 +162,12 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
+#[derive(Clone)]
+pub enum MigrationMessage {
+    Text(String),
+    Completed,
+}
+
 pub struct MigrationState {
     selected: i32,
     num_buttons: i32,
@@ -172,7 +178,7 @@ pub struct MigrationState {
     formatted_logs: Text<'static>,
     scroller: ScrollableState,
     bipanel_state: BiPanelState,
-    migration_script_tx: broadcast::Sender<String>,
+    migration_script_tx: broadcast::Sender<MigrationMessage>,
     controls_enabled: Arc<AtomicBool>,
     make_migrator: Box<dyn Fn(Options) -> Migrator>,
 }
@@ -224,8 +230,15 @@ impl MigrationState {
                     allow_deletions: true,
                     dry_run: false,
                 });
-                tokio::task::spawn_blocking(move || {
+                let migration_script_tx = self.migration_script_tx.clone();
+                let controls_enabled = self.controls_enabled.clone();
+                controls_enabled.store(false, Ordering::SeqCst);
+                task::spawn_blocking(move || {
                     if let Err(e) = migrator.migrate() {
+                        error!("{e}");
+                    }
+                    controls_enabled.store(true, Ordering::SeqCst);
+                    if let Err(e) = migration_script_tx.send(MigrationMessage::Completed) {
                         error!("{e}");
                     }
                 });
@@ -239,13 +252,17 @@ impl MigrationState {
                         allow_deletions: true,
                         dry_run: true,
                     });
+                    let migration_script_tx = self.migration_script_tx.clone();
                     let controls_enabled = self.controls_enabled.clone();
                     controls_enabled.store(false, Ordering::SeqCst);
-                    tokio::task::spawn_blocking(move || {
+                    task::spawn_blocking(move || {
                         if let Err(e) = migrator.migrate() {
                             error!("{e}");
                         }
                         controls_enabled.store(true, Ordering::SeqCst);
+                        if let Err(e) = migration_script_tx.send(MigrationMessage::Completed) {
+                            error!("{e}");
+                        }
                     });
                 }
                 1 => {
@@ -259,15 +276,22 @@ impl MigrationState {
                     let migration_script_tx = self.migration_script_tx.clone();
                     let controls_enabled = self.controls_enabled.clone();
                     controls_enabled.store(false, Ordering::SeqCst);
-                    tokio::task::spawn_blocking(move || {
+                    task::spawn_blocking(move || {
                         if let Err(e) = migrator.migrate_with_callback(|statement| {
-                            migration_script_tx.send(statement).ok();
+                            if let Err(e) =
+                                migration_script_tx.send(MigrationMessage::Text(statement))
+                            {
+                                error!("{e}");
+                            }
                         }) {
                             BroadcastWriter::enable();
                             error!("{e}");
                         };
                         BroadcastWriter::enable();
                         controls_enabled.store(true, Ordering::SeqCst);
+                        if let Err(e) = migration_script_tx.send(MigrationMessage::Completed) {
+                            error!("{e}");
+                        }
                     });
                 }
                 2 => {
@@ -309,7 +333,7 @@ impl MigrationState {
         self.log_start_time = None;
     }
 
-    pub fn subscribe_script(&self) -> broadcast::Receiver<String> {
+    pub fn subscribe_script(&self) -> broadcast::Receiver<MigrationMessage> {
         self.migration_script_tx.subscribe()
     }
 

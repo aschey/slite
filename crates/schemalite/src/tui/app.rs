@@ -12,7 +12,7 @@ use crate::{
     MigrationMetadata, Migrator, Options,
 };
 
-use super::{MigrationState, MigrationView, SqlState, SqlView};
+use super::{MigrationMessage, MigrationState, MigrationView, SqlState, SqlView};
 
 pub enum ControlFlow {
     Quit,
@@ -131,13 +131,11 @@ impl<'a> AppState<'a> {
             if key.kind == KeyEventKind::Press {
                 match (key.code, self.index) {
                     (KeyCode::Char('q'), _) => return Ok(ControlFlow::Quit),
-                    (KeyCode::Left | KeyCode::Right | KeyCode::Tab, 3)
-                        if self.migration.popup_active() =>
-                    {
+                    (KeyCode::Left | KeyCode::Right, 3) if self.migration.popup_active() => {
                         self.migration.toggle_popup_confirm()
                     }
-                    (KeyCode::Right, _) => self.next_tab(),
-                    (KeyCode::Left, _) => self.previous_tab(),
+                    (KeyCode::Tab, _) => self.next_tab(),
+                    (KeyCode::BackTab, _) => self.previous_tab(),
                     (KeyCode::Down, 0) => self.source_schema.next(),
                     (KeyCode::Down, 1) => self.target_schema.next(),
                     (KeyCode::Down, 2) => self.diff_schema.next(),
@@ -146,11 +144,10 @@ impl<'a> AppState<'a> {
                     (KeyCode::Up, 1) => self.target_schema.previous(),
                     (KeyCode::Up, 2) => self.diff_schema.previous(),
                     (KeyCode::Up, 3) => self.migration.previous(),
-                    (KeyCode::Tab, 0) => self.source_schema.toggle_focus(),
-                    (KeyCode::Tab, 1) => self.target_schema.toggle_focus(),
-                    (KeyCode::Tab, 2) => self.diff_schema.toggle_focus(),
-                    (KeyCode::Tab, 3) => self.migration.toggle_focus(),
-
+                    (KeyCode::Left | KeyCode::Right, 0) => self.source_schema.toggle_focus(),
+                    (KeyCode::Left | KeyCode::Right, 1) => self.target_schema.toggle_focus(),
+                    (KeyCode::Left | KeyCode::Right, 2) => self.diff_schema.toggle_focus(),
+                    (KeyCode::Left | KeyCode::Right, 3) => self.migration.toggle_focus(),
                     (KeyCode::Enter, 3) => self.migration.execute()?,
                     _ => {}
                 }
@@ -160,7 +157,7 @@ impl<'a> AppState<'a> {
         Ok(ControlFlow::Continue)
     }
 
-    pub fn subscribe_script(&self) -> broadcast::Receiver<String> {
+    pub fn subscribe_script(&self) -> broadcast::Receiver<MigrationMessage> {
         self.migration.subscribe_script()
     }
 

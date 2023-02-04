@@ -5,7 +5,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures::StreamExt;
-use schemalite::Migrator;
+use schemalite::{tui::MigrationMessage, Migrator};
 use schemalite::{
     tui::{AppState, BroadcastWriter, ControlFlow},
     MigrationMetadata, Options,
@@ -76,10 +76,16 @@ async fn run_app(
                 if let Ok(log) = log {
                     app.state.add_log(log).unwrap();
                 }
+                while let Ok(log) = log_rx.try_recv() {
+                    app.state.add_log(log).unwrap();
+                }
             }
             script = migration_script_rx.recv() => {
-                if let Ok(script) = script {
+                if let Ok(MigrationMessage::Text(script)) = script {
                     app.state.add_log(format!("{script}\n")).unwrap();
+                    while let Ok(MigrationMessage::Text(script)) = migration_script_rx.try_recv() {
+                        app.state.add_log(format!("{script}\n")).unwrap();
+                    }
                 }
             }
         }
