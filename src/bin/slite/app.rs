@@ -3,6 +3,7 @@ use clap::{Parser, ValueEnum};
 use color_eyre::Report;
 use rusqlite::Connection;
 use slite::{
+    read_sql_files,
     tui::{BroadcastWriter, MigratorFactory},
     Migrator, Options, SqlPrinter,
 };
@@ -60,6 +61,7 @@ pub async fn run() -> Result<(), Report> {
 
     let source = cli.source.unwrap_or_default();
     let target = cli.target.unwrap_or_default();
+    let schema = read_sql_files(&source);
 
     match cli.command {
         Some(Command::Migrate) => {
@@ -73,7 +75,7 @@ pub async fn run() -> Result<(), Report> {
                 )
                 .init();
             let migrator = Migrator::new(
-                &[schemas()[2]],
+                &schema,
                 target_db,
                 Options {
                     allow_deletions: true,
@@ -93,7 +95,7 @@ pub async fn run() -> Result<(), Report> {
                 )
                 .init();
             let migrator = Migrator::new(
-                &[schemas()[2]],
+                &schema,
                 target_db,
                 Options {
                     allow_deletions: true,
@@ -105,7 +107,7 @@ pub async fn run() -> Result<(), Report> {
         Some(Command::PrintSchema { from }) => {
             let source_db = Connection::open(target)?;
             let mut migrator = Migrator::new(
-                &[schemas()[2]],
+                &schema,
                 source_db,
                 Options {
                     allow_deletions: true,
@@ -129,7 +131,7 @@ pub async fn run() -> Result<(), Report> {
         Some(Command::Diff) => {
             let target_db = Connection::open(target)?;
             let mut migrator = Migrator::new(
-                &[schemas()[2]],
+                &schema,
                 target_db,
                 Options {
                     allow_deletions: true,
@@ -141,7 +143,7 @@ pub async fn run() -> Result<(), Report> {
         Some(Command::Generate) => {
             let target_db = Connection::open(target)?;
             let migrator = Migrator::new(
-                &[schemas()[2]],
+                &schema,
                 target_db,
                 Options {
                     allow_deletions: true,
@@ -166,88 +168,4 @@ pub async fn run() -> Result<(), Report> {
     }
 
     Ok(())
-}
-
-fn schemas() -> [&'static str; 6] {
-    [
-        // 0
-        "",
-        // 1
-        r#"
-        PRAGMA foreign_keys = OFF;
-
-        CREATE TABLE Node(
-            node_oid INTEGER PRIMARY KEY NOT NULL,
-            node_id INTEGER NOT NULL);
-        CREATE UNIQUE INDEX Node_node_id on Node(node_id);
-        "#,
-        // 2
-        // Added Node.active
-        // Changed node_id type from INTEGER to TEXT
-        // New table Job
-        r#"
-        PRAGMA foreign_keys = ON;
-    
-        CREATE TABLE Node(
-            node_oid INTEGER PRIMARY KEY NOT NULL,
-            node_id TEXT NOT NULL,
-            active BOOLEAN NOT NULL DEFAULT(1),
-            something_else TEXT);
-        CREATE UNIQUE INDEX Node_node_id on Node(node_id);
-    
-        CREATE TABLE Job(
-            node_oid INTEGER NOT NULL,
-            id INTEGER NOT NULL,
-            FOREIGN KEY(node_oid) REFERENCES Node(node_oid));
-        CREATE UNIQUE INDEX Job_node_oid on Job(node_oid, id);
-        "#,
-        // 3
-        // Remove field something_else.  Note: this is significant because
-        // Job.node_oid references table Node which must be recreated.
-        r#"
-        PRAGMA foreign_keys = ON;
-    
-        CREATE TABLE Node(
-            node_oid INTEGER PRIMARY KEY NOT NULL,
-            node_id TEXT NOT NULL,
-            active BOOLEAN NOT NULL DEFAULT(1));
-        CREATE UNIQUE INDEX Node_node_id on Node(node_id);
-    
-        CREATE TABLE Job(
-            node_oid INTEGER NOT NULL,
-            id INTEGER NOT NULL,
-            FOREIGN KEY(node_oid) REFERENCES Node(node_oid));
-        CREATE UNIQUE INDEX Job_node_oid on Job(node_oid, id);
-        "#,
-        // 4
-        // Change index Node_node_id field
-        // Delete index Job_node_id
-        // Set user_version = 6
-        r#"
-        PRAGMA foreign_keys = ON;
-    
-        CREATE TABLE Node(
-            node_oid INTEGER PRIMARY KEY NOT NULL,
-            node_id TEXT NOT NULL,
-            active BOOLEAN NOT NULL DEFAULT(1));
-        CREATE UNIQUE INDEX Node_node_id on Node(node_oid);
-    
-        CREATE TABLE Job(
-            node_oid INTEGER NOT NULL,
-            id INTEGER NOT NULL,
-            FOREIGN KEY(node_oid) REFERENCES Node(node_oid));
-        CREATE UNIQUE INDEX Job_node_oid on Job(node_oid, id);
-    
-        PRAGMA user_version = 6;
-        "#,
-        // 5
-        // (vs. schema[1]) - Change Node.active default from 1 to 2
-        r#"
-        CREATE TABLE Node(
-            node_oid INTEGER PRIMARY KEY NOT NULL,
-            node_id TEXT NOT NULL,
-            active BOOLEAN NOT NULL DEFAULT(2));
-        CREATE UNIQUE INDEX Node_node_id on Node(node_id);
-        "#,
-    ]
 }
