@@ -157,6 +157,21 @@ impl ObjectsState {
         self.adjusted_index as usize
     }
 
+    fn select(&mut self, entry: &str) {
+        let mut skip = 0;
+        for (i, object) in self.objects.iter().enumerate() {
+            match object {
+                ListItemType::Header(_) => skip += 1,
+                ListItemType::Entry(val) => {
+                    if val == entry {
+                        self.state.select(Some(i));
+                        self.adjusted_index = (i - skip) as i32;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn view_width(&self) -> usize {
         self.object_view_width
     }

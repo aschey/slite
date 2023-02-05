@@ -7,8 +7,7 @@ use crossterm::{
 use futures::StreamExt;
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, Debouncer};
-use schemalite::tui::{AppState, BroadcastWriter, ControlFlow};
-use schemalite::tui::{Message, MigratorFactory};
+use slite::tui::{AppState, BroadcastWriter, ControlFlow, Message, MigratorFactory};
 use std::{
     io::{self, Stdout},
     time::Duration,
@@ -120,5 +119,5 @@ async fn run_app(
 }
 
 fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
-    f.render_stateful_widget(schemalite::tui::App::default(), f.size(), &mut app.state)
+    f.render_stateful_widget(slite::tui::App::default(), f.size(), &mut app.state)
 }

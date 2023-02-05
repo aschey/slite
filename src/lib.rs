@@ -56,6 +56,7 @@ pub struct Migrator {
     foreign_keys_enabled: bool,
 }
 
+#[cfg(feature = "read-files")]
 pub fn read_sql_files(sql_dir: impl AsRef<std::path::Path>) -> Vec<String> {
     let paths: Vec<_> = ignore::WalkBuilder::new(sql_dir)
         .max_depth(Some(5))

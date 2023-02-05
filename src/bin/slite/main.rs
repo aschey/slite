@@ -1,16 +1,17 @@
-use std::path::PathBuf;
-
+use app_tui::run_tui;
 use clap::{Parser, ValueEnum};
 use color_eyre::Report;
 use rusqlite::Connection;
-use schemalite::{
+use slite::{
     tui::{BroadcastWriter, MigratorFactory},
     Migrator, Options, SqlPrinter,
 };
-use schemalite_cli::run_tui;
+use std::path::PathBuf;
 use tracing::{metadata::LevelFilter, Level};
 use tracing_subscriber::{filter::Targets, prelude::*, util::SubscriberInitExt, Layer, Registry};
 use tracing_tree::HierarchicalLayer;
+#[cfg(feature = "application")]
+mod app_tui;
 
 #[derive(ValueEnum, Clone)]
 enum SchemaType {
@@ -55,6 +56,7 @@ fn destination_parser(val: &str) -> Result<PathBuf, Report> {
     }
 }
 
+#[cfg(feature = "application")]
 #[tokio::main]
 async fn main() -> Result<(), Report> {
     color_eyre::install()?;
@@ -169,6 +171,9 @@ async fn main() -> Result<(), Report> {
 
     Ok(())
 }
+
+#[cfg(not(feature = "application"))]
+pub fn main() {}
 
 fn schemas() -> [&'static str; 6] {
     [

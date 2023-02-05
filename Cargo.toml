@@ -1,3 +1,57 @@
-[workspace]
-members = ["crates/*", "util/gen-syntax"]
+[package]
+edition = "2021"
+name = "slite"
 resolver = "2"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ansi-to-tui = "2"
+chrono = "0.4.23"
+clap = {version = "4.0.32", features = ["derive"], optional = true}
+color-eyre = {version = "0.6.2", optional = true}
+confique = "0.2.2"
+crossterm = {version = "0.26.0", optional = true}
+futures = {version = "0.3.25", optional = true}
+ignore = {version = "0.4.20", optional = true}
+imara-diff = {version = "0.1", optional = true}
+notify = {version = "5.1.0", default_features = false, features = ["macos_fsevent"], optional = true}
+notify-debouncer-mini = {version = "0.2.1", default_features = false, optional = true}
+once_cell = "1"
+owo-colors = {version = "3", optional = true}
+regex = "1"
+rusqlite = {version = "0.28", features = ["bundled"]}
+syntect = {version = "5", default-features = false, features = ["regex-fancy", "parsing"], optional = true}
+thiserror = "1"
+tokio = {version = "1", features = ["sync", "rt-multi-thread"], optional = true}
+tracing = "0.1"
+tracing-subscriber = {version = "0.3", optional = true}
+tracing-tree = {git = "https://github.com/aschey/tracing-tree", rev = "f81502acc9bc1e2baea22386896e7ee15e15c924", optional = true}
+tui = {version = "0.19", optional = true}
+
+[features]
+application = [
+  "clap",
+  "crossterm-events",
+  "crossterm/event-stream",
+  "diff",
+  "pretty-print",
+  "read-files",
+  "tui",
+  "color-eyre",
+  "tracing-tree",
+  "notify",
+  "notify-debouncer-mini",
+  "futures",
+  "tokio/macros",
+]
+crossterm-events = ["crossterm"]
+default = ["application"]
+diff = ["imara-diff"]
+pretty-print = ["owo-colors", "syntect"]
+read-files = ["ignore"]
+tui = ["dep:tui", "tokio", "tracing-subscriber", "crossterm", "read-files"]
+
+[dev-dependencies]
+rstest = "0.16.0"
