@@ -9,7 +9,7 @@ use slite::{
 use std::path::PathBuf;
 use tracing::{metadata::LevelFilter, Level};
 use tracing_subscriber::{filter::Targets, prelude::*, util::SubscriberInitExt, Layer, Registry};
-use tracing_tree::HierarchicalLayer;
+use tracing_tree2::HierarchicalLayer;
 #[cfg(feature = "application")]
 mod app_tui;
 
