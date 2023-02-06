@@ -18,7 +18,7 @@ pub struct SqlPrinter {
 impl Default for SqlPrinter {
     fn default() -> Self {
         let syntax_set = SYNTAXES.get_or_init(|| {
-            syntect::dumps::from_uncompressed_data(include_bytes!("../assets/sql.packdump"))
+            syntect::dumps::from_uncompressed_data(include_bytes!("../assets/sqlite.packdump"))
                 .expect("failed to load syntaxes")
         });
         let themes = THEMES.get_or_init(|| {
