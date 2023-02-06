@@ -1,6 +1,9 @@
-use std::{collections::BTreeMap, fmt::Display};
+use std::{collections::BTreeMap, fmt::Display, path::PathBuf};
 
-use rusqlite::{types::FromSql, Connection, Params, Row, Transaction, TransactionBehavior};
+use regex::Regex;
+use rusqlite::{
+    types::FromSql, Connection, LoadExtensionGuard, Params, Row, Transaction, TransactionBehavior,
+};
 use tracing::{debug, span, trace, warn, Level};
 
 use crate::{InitializationError, MigrationError, QueryError, SqlPrinter};
@@ -20,14 +23,22 @@ macro_rules! event {
 pub(crate) struct PristineConnection {
     connection: Connection,
     sql_printer: SqlPrinter,
+    ignore: Option<Regex>,
 }
 
 impl PristineConnection {
-    pub fn new() -> Result<Self, InitializationError> {
+    pub fn new(
+        extensions: impl AsRef<[PathBuf]>,
+        ignore: Option<Regex>,
+    ) -> Result<Self, InitializationError> {
+        let connection = Connection::open_in_memory()
+            .map_err(|e| InitializationError::ConnectionFailure(":memory:".to_owned(), e))?;
+        load_extensions(&connection, extensions).unwrap();
+
         Ok(Self {
-            connection: Connection::open_in_memory()
-                .map_err(|e| InitializationError::ConnectionFailure(":memory:".to_owned(), e))?,
+            connection,
             sql_printer: SqlPrinter::default(),
+            ignore,
         })
     }
 
@@ -66,6 +77,7 @@ impl PristineConnection {
             &self.connection,
             Level::TRACE,
             "Executing query against reference database",
+            &self.ignore,
             &mut self.sql_printer,
         )
     }
@@ -89,6 +101,7 @@ where
     sql_printer: SqlPrinter,
     modified: bool,
     on_script: F,
+    ignore: Option<Regex>,
     dry_run: bool,
 }
 
@@ -99,6 +112,7 @@ where
     pub fn new(
         target_connection: &'conn mut TargetConnection,
         dry_run: bool,
+        ignore: Option<Regex>,
         on_script: F,
     ) -> Result<Self, MigrationError> {
         let transaction = target_connection
@@ -110,6 +124,7 @@ where
             sql_printer: SqlPrinter::default(),
             modified: false,
             on_script,
+            ignore,
             dry_run,
         })
     }
@@ -143,7 +158,13 @@ where
     }
 
     pub fn parse_metadata(&mut self) -> Result<Metadata, QueryError> {
-        parse_metadata(&self.transaction, Level::DEBUG, "", &mut self.sql_printer)
+        parse_metadata(
+            &self.transaction,
+            Level::DEBUG,
+            "",
+            &self.ignore,
+            &mut self.sql_printer,
+        )
     }
 
     pub fn query<T, R>(&mut self, sql: &str, f: R) -> Result<Vec<T>, QueryError>
@@ -194,14 +215,22 @@ pub(crate) struct TargetConnection {
     connection: Connection,
     sql_printer: SqlPrinter,
     dry_run: bool,
+    ignore: Option<Regex>,
 }
 
 impl TargetConnection {
-    pub fn new(connection: Connection, dry_run: bool) -> Self {
+    pub fn new(
+        connection: Connection,
+        extensions: impl AsRef<[PathBuf]>,
+        ignore: Option<Regex>,
+        dry_run: bool,
+    ) -> Self {
+        load_extensions(&connection, extensions).unwrap();
         Self {
             connection,
             sql_printer: SqlPrinter::default(),
             dry_run,
+            ignore,
         }
     }
 
@@ -241,8 +270,27 @@ impl TargetConnection {
     }
 
     pub fn parse_metadata(&mut self) -> Result<Metadata, QueryError> {
-        parse_metadata(&self.connection, Level::DEBUG, "", &mut self.sql_printer)
+        parse_metadata(
+            &self.connection,
+            Level::DEBUG,
+            "",
+            &self.ignore,
+            &mut self.sql_printer,
+        )
     }
+}
+
+pub fn load_extensions(
+    conn: &Connection,
+    extensions: impl AsRef<[PathBuf]>,
+) -> Result<(), rusqlite::Error> {
+    unsafe {
+        let _guard = LoadExtensionGuard::new(conn);
+        for extension in extensions.as_ref() {
+            conn.load_extension(extension, None)?;
+        }
+    }
+    Ok(())
 }
 
 fn replace_sql_params<P>(sql: &str, params: P) -> String
@@ -350,12 +398,15 @@ fn select_metadata(
     sql: &str,
     log_level: Level,
     msg: &str,
+    ignore: &Option<Regex>,
     sql_printer: &mut SqlPrinter,
 ) -> Result<BTreeMap<String, String>, QueryError> {
     let results =
         query::<(String, String), _>(connection, sql, log_level, msg, sql_printer, |row| {
             Ok((row.get(0)?, row.get::<_, String>(1)?))
-        })?;
+        })?
+        .into_iter()
+        .filter(|(key, _)| !ignore.as_ref().map(|i| i.is_match(key)).unwrap_or(false));
     Ok(BTreeMap::from_iter(results))
 }
 
@@ -369,21 +420,24 @@ fn parse_metadata(
     connection: &Connection,
     log_level: Level,
     msg: &str,
+    ignore: &Option<Regex>,
     sql_printer: &mut SqlPrinter,
 ) -> Result<Metadata, QueryError> {
     let tables = select_metadata(
         connection,
-        "SELECT name, sql from sqlite_master WHERE type = 'table' and name != 'sqlite_sequence'",
+        "SELECT name, sql from sqlite_master WHERE type = 'table' and name != 'sqlite_sequence' AND sql IS NOT NULL",
         log_level,
         msg,
+        ignore,
         sql_printer,
     )?;
 
     let indexes = select_metadata(
         connection,
-        "SELECT name, sql from sqlite_master WHERE type = 'index' and name != 'sqlite_sequence'",
+        "SELECT name, sql from sqlite_master WHERE type = 'index' and name != 'sqlite_sequence' AND sql IS NOT NULL",
         log_level,
         msg,
+        ignore,
         sql_printer,
     )?;
     Ok(Metadata { tables, indexes })

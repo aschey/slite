@@ -225,6 +225,7 @@ impl MigrationState {
                 let migrator = self.migrator_factory.create_migrator(Options {
                     allow_deletions: true,
                     dry_run: false,
+                    ..Default::default()
                 });
                 let migration_script_tx = self.message_tx.clone();
                 let controls_enabled = self.controls_enabled.clone();
@@ -247,6 +248,7 @@ impl MigrationState {
                     let migrator = self.migrator_factory.create_migrator(Options {
                         allow_deletions: true,
                         dry_run: true,
+                        ..Default::default()
                     });
                     let migration_script_tx = self.message_tx.clone();
                     let controls_enabled = self.controls_enabled.clone();
@@ -269,6 +271,7 @@ impl MigrationState {
                     let migrator = self.migrator_factory.create_migrator(Options {
                         allow_deletions: true,
                         dry_run: true,
+                        ..Default::default()
                     });
                     let migration_script_tx = self.message_tx.clone();
                     let controls_enabled = self.controls_enabled.clone();

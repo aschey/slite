@@ -28,6 +28,7 @@ use rusqlite::Connection;
 use std::{
     collections::HashMap,
     fmt::Debug,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 use tracing::{debug, info, span, Level};
@@ -47,6 +48,8 @@ regex!(QUOTES_RE, r#""(\w+)""#);
 pub struct Options {
     pub allow_deletions: bool,
     pub dry_run: bool,
+    pub extensions: Vec<PathBuf>,
+    pub ignore: Option<Regex>,
 }
 
 pub struct Migrator {
@@ -58,7 +61,7 @@ pub struct Migrator {
 
 #[cfg(feature = "read-files")]
 pub fn read_sql_files(sql_dir: impl AsRef<std::path::Path>) -> Vec<String> {
-    let paths: Vec<_> = ignore::WalkBuilder::new(sql_dir)
+    let mut paths: Vec<_> = ignore::WalkBuilder::new(sql_dir)
         .max_depth(Some(5))
         .filter_entry(|entry| {
             let path = entry.path();
@@ -68,11 +71,31 @@ pub fn read_sql_files(sql_dir: impl AsRef<std::path::Path>) -> Vec<String> {
         .filter_map(|dir_result| dir_result.ok().map(|d| d.path().to_path_buf()))
         .collect();
 
+    paths.sort_by(|a, b| {
+        let a_seq = get_sequence(a);
+        let b_seq = get_sequence(b);
+        a_seq.cmp(&b_seq)
+    });
     paths
         .iter()
         .filter(|p| p.is_file())
         .map(|p| std::fs::read_to_string(p).unwrap())
         .collect()
+}
+
+fn get_sequence(path: &Path) -> i32 {
+    let path_str = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let seq = path_str.split('-').next();
+    if let Some(first) = seq {
+        if let Ok(seq_num) = first.parse::<i32>() {
+            return seq_num;
+        }
+    }
+    i32::MIN
 }
 
 impl Migrator {
@@ -81,7 +104,12 @@ impl Migrator {
         target_connection: Connection,
         options: Options,
     ) -> Result<Self, InitializationError> {
-        let mut target_connection = TargetConnection::new(target_connection, options.dry_run);
+        let mut target_connection = TargetConnection::new(
+            target_connection,
+            &options.extensions,
+            options.ignore.clone(),
+            options.dry_run,
+        );
         let foreign_keys_enabled = target_connection
             .get_pragma::<i32>("foreign_keys")
             .map_err(|e| {
@@ -101,7 +129,7 @@ impl Migrator {
                     )
                 })?;
         }
-        let mut pristine = PristineConnection::new()?;
+        let mut pristine = PristineConnection::new(&options.extensions, options.ignore.clone())?;
         pristine.initialize_schema(schema)?;
         Ok(Self {
             target_connection: Arc::new(Mutex::new(target_connection)),
@@ -121,7 +149,12 @@ impl Migrator {
     ) -> Result<(), MigrationError> {
         let connection_rc = self.target_connection.clone();
         let mut connection = connection_rc.lock().expect("Failed to lock mutex");
-        let mut tx = TargetTransaction::new(&mut connection, self.options.dry_run, on_script)?;
+        let mut tx = TargetTransaction::new(
+            &mut connection,
+            self.options.dry_run,
+            self.options.ignore.clone(),
+            on_script,
+        )?;
 
         let migration_span = span!(Level::INFO, "Starting migration");
         let _migration_guard = migration_span.entered();
