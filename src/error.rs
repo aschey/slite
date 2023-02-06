@@ -31,3 +31,11 @@ pub enum SqlFormatError {
     #[error("Error formatting SQL {0}: {1}")]
     TextFormattingFailure(String, #[source] ansi_to_tui::Error),
 }
+
+#[derive(thiserror::Error, Debug)]
+pub enum RefreshError {
+    #[error("{0}")]
+    SqlFormatFailure(#[source] SqlFormatError),
+    #[error("{0}")]
+    InitializationFailure(#[source] InitializationError),
+}

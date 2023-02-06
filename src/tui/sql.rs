@@ -40,7 +40,7 @@ impl StatefulWidget for SqlView {
                     Paragraph::new(
                         state
                             .sql
-                            .get(state.state.selected())
+                            .get(state.state.selected_index())
                             .expect("Selected index out of bounds")
                             .clone(),
                     )
@@ -154,6 +154,14 @@ impl SqlState {
     pub fn toggle_focus(&mut self) {
         self.bipanel_state.toggle_focus();
     }
+
+    pub fn selected_item(&self) -> Option<String> {
+        self.state.selected_item()
+    }
+
+    pub fn select(&mut self, item: &str) {
+        self.state.select(item);
+    }
 }
 
 impl BiPanel for SqlState {
@@ -164,7 +172,7 @@ impl BiPanel for SqlState {
 
         self.state.next();
         self.scroller
-            .set_content_height(self.sql.get(self.state.selected()).unwrap().height() as u16);
+            .set_content_height(self.sql.get(self.state.selected_index()).unwrap().height() as u16);
         self.scroller.scroll_to_top();
     }
 
@@ -179,7 +187,7 @@ impl BiPanel for SqlState {
 
         self.state.previous();
         self.scroller
-            .set_content_height(self.sql.get(self.state.selected()).unwrap().height() as u16);
+            .set_content_height(self.sql.get(self.state.selected_index()).unwrap().height() as u16);
         self.scroller.scroll_to_top();
     }
 

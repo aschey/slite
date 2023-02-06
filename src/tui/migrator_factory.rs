@@ -1,4 +1,4 @@
-use crate::{read_sql_files, MigrationMetadata, Migrator, Options};
+use crate::{error::InitializationError, read_sql_files, MigrationMetadata, Migrator, Options};
 use regex::Regex;
 use rusqlite::{Connection, OpenFlags};
 use std::path::PathBuf;
@@ -19,7 +19,7 @@ impl MigratorFactory {
         target_db_path: impl Into<PathBuf>,
         extensions: Vec<PathBuf>,
         ignore: Option<Regex>,
-    ) -> Self {
+    ) -> Result<Self, InitializationError> {
         let mut factory = Self {
             schemas: vec![],
             schema_dir: schema_dir.into(),
@@ -29,15 +29,15 @@ impl MigratorFactory {
             extensions,
             ignore,
         };
-        factory.update_schemas();
-        factory
+        factory.update_schemas()?;
+        Ok(factory)
     }
 
     pub fn with_open_flags(self, open_flags: OpenFlags) -> Self {
         Self { open_flags, ..self }
     }
 
-    pub fn create_migrator(&self, mut options: Options) -> Migrator {
+    pub fn create_migrator(&self, mut options: Options) -> Result<Migrator, InitializationError> {
         options.extensions = self.extensions.clone();
         options.ignore = self.ignore.clone();
         Migrator::new(
@@ -45,7 +45,6 @@ impl MigratorFactory {
             Connection::open_with_flags(&self.target_db_path, self.open_flags).unwrap(),
             options,
         )
-        .unwrap()
     }
 
     pub fn schema_dir(&self) -> &PathBuf {
@@ -56,7 +55,7 @@ impl MigratorFactory {
         &self.metadata
     }
 
-    pub fn update_schemas(&mut self) {
+    pub fn update_schemas(&mut self) -> Result<(), InitializationError> {
         self.schemas = read_sql_files(&self.schema_dir);
 
         self.metadata = self
@@ -65,8 +64,11 @@ impl MigratorFactory {
                 dry_run: true,
                 extensions: self.extensions.clone(),
                 ignore: self.ignore.clone(),
-            })
+            })?
             .parse_metadata()
-            .unwrap();
+            .map_err(|e| {
+                InitializationError::QueryFailure("Failed to parse metadata".to_owned(), e)
+            })?;
+        Ok(())
     }
 }

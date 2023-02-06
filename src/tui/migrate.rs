@@ -15,7 +15,7 @@ use tui::{
 };
 
 use crate::{
-    error::{MigrationError, SqlFormatError},
+    error::{InitializationError, SqlFormatError},
     Options,
 };
 
@@ -210,7 +210,7 @@ impl MigrationState {
         self.bipanel_state.toggle_focus();
     }
 
-    pub fn execute(&mut self) -> Result<(), MigrationError> {
+    pub fn execute(&mut self) -> Result<(), InitializationError> {
         if !self.controls_enabled.load(Ordering::SeqCst) {
             return Ok(());
         }
@@ -226,7 +226,7 @@ impl MigrationState {
                     allow_deletions: true,
                     dry_run: false,
                     ..Default::default()
-                });
+                })?;
                 let migration_script_tx = self.message_tx.clone();
                 let controls_enabled = self.controls_enabled.clone();
                 controls_enabled.store(false, Ordering::SeqCst);
@@ -249,7 +249,7 @@ impl MigrationState {
                         allow_deletions: true,
                         dry_run: true,
                         ..Default::default()
-                    });
+                    })?;
                     let migration_script_tx = self.message_tx.clone();
                     let controls_enabled = self.controls_enabled.clone();
                     controls_enabled.store(false, Ordering::SeqCst);
@@ -272,7 +272,7 @@ impl MigrationState {
                         allow_deletions: true,
                         dry_run: true,
                         ..Default::default()
-                    });
+                    })?;
                     let migration_script_tx = self.message_tx.clone();
                     let controls_enabled = self.controls_enabled.clone();
                     controls_enabled.store(false, Ordering::SeqCst);

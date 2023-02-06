@@ -250,7 +250,7 @@ pub async fn run() -> Result<(), Report> {
                 )
                 .init();
 
-            run_tui(MigratorFactory::new(source, target, extensions, ignore)).await?;
+            run_tui(MigratorFactory::new(source, target, extensions, ignore)?).await?;
         }
     }
 

@@ -153,11 +153,22 @@ impl ObjectsState {
         self.state.select(Some(real_index as usize));
     }
 
-    pub fn selected(&self) -> usize {
+    pub fn selected_index(&self) -> usize {
         self.adjusted_index as usize
     }
 
-    fn select(&mut self, entry: &str) {
+    pub fn selected_item(&self) -> Option<String> {
+        if let Some(selected) = self.state.selected() {
+            match self.objects.get(selected).expect("Item not selected") {
+                ListItemType::Entry(entry) => Some(entry.to_owned()),
+                ListItemType::Header(_) => unreachable!(),
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn select(&mut self, entry: &str) {
         let mut skip = 0;
         for (i, object) in self.objects.iter().enumerate() {
             match object {

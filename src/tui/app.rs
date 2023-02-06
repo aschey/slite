@@ -1,5 +1,5 @@
 use super::{MigrationState, MigrationView, MigratorFactory, SqlState, SqlView};
-use crate::error::{MigrationError, SqlFormatError};
+use crate::error::{InitializationError, RefreshError, SqlFormatError};
 use std::marker::PhantomData;
 use tokio::sync::mpsc;
 use tui::{
@@ -116,12 +116,34 @@ impl<'a> AppState<'a> {
         })
     }
 
-    pub fn refresh(&mut self) -> Result<(), SqlFormatError> {
-        self.migration.migrator_factory().update_schemas();
+    pub fn refresh(&mut self) -> Result<(), RefreshError> {
+        self.migration
+            .migrator_factory()
+            .update_schemas()
+            .map_err(RefreshError::InitializationFailure)?;
         let schema = self.migration.migrator_factory().metadata();
-        self.source_schema = SqlState::schema(schema.source.clone())?;
-        self.target_schema = SqlState::schema(schema.target.clone())?;
-        self.diff_schema = SqlState::diff(schema.clone())?;
+
+        let selected_source = self.source_schema.selected_item();
+        self.source_schema =
+            SqlState::schema(schema.source.clone()).map_err(RefreshError::SqlFormatFailure)?;
+        if let Some(selected_source) = selected_source {
+            self.source_schema.select(&selected_source);
+        }
+
+        let selected_target = self.target_schema.selected_item();
+        self.target_schema =
+            SqlState::schema(schema.target.clone()).map_err(RefreshError::SqlFormatFailure)?;
+        if let Some(selected_target) = selected_target {
+            self.target_schema.select(&selected_target);
+        }
+
+        let selected_diff = self.diff_schema.selected_item();
+        self.diff_schema =
+            SqlState::diff(schema.clone()).map_err(RefreshError::SqlFormatFailure)?;
+        if let Some(selected_diff) = selected_diff {
+            self.diff_schema.select(&selected_diff);
+        }
+
         Ok(())
     }
 
@@ -137,16 +159,13 @@ impl<'a> AppState<'a> {
     pub fn handle_event(
         &mut self,
         event: crossterm::event::Event,
-    ) -> Result<ControlFlow, MigrationError> {
+    ) -> Result<ControlFlow, InitializationError> {
         use crossterm::event::{Event, KeyCode, KeyEventKind};
 
         if let Event::Key(key) = event {
             if key.kind == KeyEventKind::Press {
                 match (key.code, self.index) {
                     (KeyCode::Char('q'), _) => return Ok(ControlFlow::Quit),
-                    (KeyCode::Left | KeyCode::Right, 3) if self.migration.popup_active() => {
-                        self.migration.toggle_popup_confirm()
-                    }
                     (KeyCode::Tab, _) => self.next_tab(),
                     (KeyCode::BackTab, _) => self.previous_tab(),
                     (KeyCode::Down, 0) => self.source_schema.next(),
@@ -160,6 +179,9 @@ impl<'a> AppState<'a> {
                     (KeyCode::Left | KeyCode::Right, 0) => self.source_schema.toggle_focus(),
                     (KeyCode::Left | KeyCode::Right, 1) => self.target_schema.toggle_focus(),
                     (KeyCode::Left | KeyCode::Right, 2) => self.diff_schema.toggle_focus(),
+                    (KeyCode::Left | KeyCode::Right, 3) if self.migration.popup_active() => {
+                        self.migration.toggle_popup_confirm()
+                    }
                     (KeyCode::Left | KeyCode::Right, 3) => self.migration.toggle_focus(),
                     (KeyCode::Enter, 3) => self.migration.execute()?,
                     _ => {}

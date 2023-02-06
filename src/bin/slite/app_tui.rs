@@ -26,7 +26,7 @@ impl<'a> App<'a> {
         message_tx: mpsc::Sender<Message>,
     ) -> Result<App<'a>, Report> {
         let message_tx_ = message_tx.clone();
-        let mut debouncer = new_debouncer(Duration::from_secs(1), None, move |_| {
+        let mut debouncer = new_debouncer(Duration::from_millis(250), None, move |_| {
             message_tx_.blocking_send(Message::FileChanged).unwrap()
         })?;
         debouncer
