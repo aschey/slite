@@ -1,0 +1,16 @@
+[tasks.update]
+args = ["update"]
+command = "cargo"
+install_crate = "cargo-edit"
+
+[tasks.upgrade]
+args = ["upgrade"]
+command = "cargo"
+install_crate = "cargo-edit"
+
+[tasks.update-all]
+dependencies = ["update", "upgrade"]
+script = '''
+cd util/gen-syntax
+makers update-all
+'''

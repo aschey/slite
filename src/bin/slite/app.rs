@@ -5,7 +5,7 @@ use confique::{toml, Config};
 use owo_colors::OwoColorize;
 use regex::Regex;
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
+use serde::{de::Visitor, Deserialize, Serialize};
 use slite::{
     read_sql_files,
     tui::{BroadcastWriter, MigratorFactory},
@@ -14,8 +14,9 @@ use slite::{
 use std::{
     fs,
     path::{Path, PathBuf},
+    str::FromStr,
 };
-use tracing::{metadata::LevelFilter, Level};
+use tracing::metadata::LevelFilter;
 use tracing_subscriber::{filter::Targets, prelude::*, util::SubscriberInitExt, Layer, Registry};
 use tracing_tree2::HierarchicalLayer;
 
@@ -48,6 +49,70 @@ enum Command {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SerdeRegex(#[serde(with = "serde_regex")] Regex);
 
+#[derive(thiserror::Error, Debug)]
+#[error("Error parsing log level: {0} is not a valid value")]
+pub struct LevelParseError(String);
+
+#[derive(Debug, Clone)]
+pub struct SerdeLevel(LevelFilter);
+
+impl FromStr for SerdeLevel {
+    type Err = LevelParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(SerdeLevel(match s.to_lowercase().as_str() {
+            "trace" => LevelFilter::TRACE,
+            "debug" => LevelFilter::DEBUG,
+            "info" => LevelFilter::INFO,
+            "warn" => LevelFilter::WARN,
+            "error" => LevelFilter::ERROR,
+            _ => return Err(LevelParseError(s.to_owned())),
+        }))
+    }
+}
+
+impl Serialize for SerdeLevel {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self.0 {
+            LevelFilter::TRACE => serializer.serialize_str("trace"),
+            LevelFilter::DEBUG => serializer.serialize_str("debug"),
+            LevelFilter::INFO => serializer.serialize_str("info"),
+            LevelFilter::WARN => serializer.serialize_str("warn"),
+            LevelFilter::ERROR => serializer.serialize_str("error"),
+            _ => serializer.serialize_str(""),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SerdeLevel {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct LevelDeserializer;
+
+        impl<'de> Visitor<'de> for LevelDeserializer {
+            type Value = SerdeLevel;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("A valid log level")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                SerdeLevel::from_str(v).map_err(|e| E::custom(e.to_string()))
+            }
+        }
+
+        deserializer.deserialize_str(LevelDeserializer)
+    }
+}
+
 #[derive(Debug, Clone, Args, confique::Config, Serialize, Deserialize)]
 struct Conf {
     #[arg(short, long, value_parser=source_parser)]
@@ -58,6 +123,8 @@ struct Conf {
     extension: Option<Vec<PathBuf>>,
     #[arg(short, long, value_parser=regex_parser)]
     ignore: Option<SerdeRegex>,
+    #[arg(short, long)]
+    log_level: Option<SerdeLevel>,
 }
 
 #[derive(clap::Parser)]
@@ -108,6 +175,7 @@ pub async fn run() -> Result<(), Report> {
         target: cli.config.target,
         extension: cli.config.extension,
         ignore: cli.config.ignore,
+        log_level: cli.config.log_level,
     };
     let conf = Conf::builder()
         .preloaded(partial)
@@ -118,6 +186,7 @@ pub async fn run() -> Result<(), Report> {
     let target = conf.target.unwrap_or_default();
     let extensions = conf.extension.unwrap_or_default();
     let ignore = conf.ignore.map(|i| i.0);
+    let log_level = conf.log_level.unwrap_or(SerdeLevel(LevelFilter::INFO));
     let schema = read_sql_files(&source);
 
     match cli.command {
@@ -130,7 +199,7 @@ pub async fn run() -> Result<(), Report> {
                         HierarchicalLayer::default()
                             .with_indent_lines(true)
                             .with_level(false)
-                            .with_filter(LevelFilter::TRACE),
+                            .with_filter(log_level.0),
                     )
                     .init();
                 let migrator = Migrator::new(
@@ -152,7 +221,7 @@ pub async fn run() -> Result<(), Report> {
                         HierarchicalLayer::default()
                             .with_indent_lines(true)
                             .with_level(false)
-                            .with_filter(LevelFilter::INFO),
+                            .with_filter(log_level.0),
                     )
                     .init();
                 let migrator = Migrator::new(
@@ -246,7 +315,7 @@ pub async fn run() -> Result<(), Report> {
                         .with_writer(BroadcastWriter::default())
                         .with_indent_lines(true)
                         .with_level(false)
-                        .with_filter(Targets::default().with_target("slite", Level::TRACE)),
+                        .with_filter(Targets::default().with_target("slite", log_level.0)),
                 )
                 .init();
 
