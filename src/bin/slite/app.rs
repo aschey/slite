@@ -246,7 +246,7 @@ pub async fn run() -> Result<(), Report> {
                         .with_writer(BroadcastWriter::default())
                         .with_indent_lines(true)
                         .with_level(false)
-                        .with_filter(Targets::default().with_target("schemalite", Level::TRACE)),
+                        .with_filter(Targets::default().with_target("slite", Level::TRACE)),
                 )
                 .init();
 
