@@ -1,5 +1,6 @@
-use crate::{error::InitializationError, read_sql_files, MigrationMetadata, Migrator, Options};
-use regex::Regex;
+use crate::{
+    error::InitializationError, read_sql_files, Config, MigrationMetadata, Migrator, Options,
+};
 use rusqlite::{Connection, OpenFlags};
 use std::path::PathBuf;
 
@@ -9,16 +10,14 @@ pub struct MigratorFactory {
     target_db_path: PathBuf,
     metadata: MigrationMetadata,
     open_flags: OpenFlags,
-    extensions: Vec<PathBuf>,
-    ignore: Option<Regex>,
+    config: Config,
 }
 
 impl MigratorFactory {
     pub fn new(
         schema_dir: impl Into<PathBuf>,
         target_db_path: impl Into<PathBuf>,
-        extensions: Vec<PathBuf>,
-        ignore: Option<Regex>,
+        config: Config,
     ) -> Result<Self, InitializationError> {
         let mut factory = Self {
             schemas: vec![],
@@ -26,8 +25,7 @@ impl MigratorFactory {
             target_db_path: target_db_path.into(),
             open_flags: OpenFlags::default(),
             metadata: MigrationMetadata::default(),
-            extensions,
-            ignore,
+            config,
         };
         factory.update_schemas()?;
         Ok(factory)
@@ -37,12 +35,23 @@ impl MigratorFactory {
         Self { open_flags, ..self }
     }
 
-    pub fn create_migrator(&self, mut options: Options) -> Result<Migrator, InitializationError> {
-        options.extensions = self.extensions.clone();
-        options.ignore = self.ignore.clone();
+    pub fn set_config(&mut self, config: Config) {
+        self.config = config;
+    }
+
+    pub fn set_schema_dir(&mut self, dir: PathBuf) {
+        self.schema_dir = dir;
+    }
+
+    pub fn set_target_path(&mut self, path: PathBuf) {
+        self.target_db_path = path;
+    }
+
+    pub fn create_migrator(&self, options: Options) -> Result<Migrator, InitializationError> {
         Migrator::new(
             &self.schemas,
             Connection::open_with_flags(&self.target_db_path, self.open_flags).unwrap(),
+            self.config.clone(),
             options,
         )
     }
@@ -62,8 +71,6 @@ impl MigratorFactory {
             .create_migrator(Options {
                 allow_deletions: false,
                 dry_run: true,
-                extensions: self.extensions.clone(),
-                ignore: self.ignore.clone(),
             })?
             .parse_metadata()
             .map_err(|e| {

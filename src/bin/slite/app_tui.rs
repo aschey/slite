@@ -26,9 +26,15 @@ impl<'a> App<'a> {
         message_tx: mpsc::Sender<Message>,
     ) -> Result<App<'a>, Report> {
         let message_tx_ = message_tx.clone();
-        let mut debouncer = new_debouncer(Duration::from_millis(250), None, move |_| {
-            message_tx_.blocking_send(Message::FileChanged).unwrap()
-        })?;
+        let mut debouncer = new_debouncer(
+            Duration::from_millis(250),
+            None,
+            move |events: Result<_, _>| {
+                if events.is_ok() {
+                    message_tx_.blocking_send(Message::FileChanged).unwrap();
+                }
+            },
+        )?;
         debouncer
             .watcher()
             .watch(migrator_factory.schema_dir(), RecursiveMode::Recursive)?;
@@ -40,13 +46,17 @@ impl<'a> App<'a> {
     }
 }
 
-pub async fn run_tui(migrator_factory: MigratorFactory) -> Result<(), Report> {
+pub async fn run_tui(
+    migrator_factory: MigratorFactory,
+    message_tx: mpsc::Sender<Message>,
+    message_rx: mpsc::Receiver<Message>,
+) -> Result<(), Report> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    let (message_tx, message_rx) = mpsc::channel(32);
+
     let app = App::new(migrator_factory, message_tx)?;
     let res = run_app(&mut terminal, app, message_rx).await;
 
@@ -99,6 +109,16 @@ async fn run_app(
                         Message::FileChanged | Message::MigrationCompleted => {
                             app.state.refresh()?;
                         }
+                        Message::ConfigChanged(config) => {
+                            app.state.update_config(config)?;
+                        }
+                        Message::SourceChanged(source) => {
+                            app.state.set_schema_dir(source)?;
+                        }
+                        Message::TargetChanged(path) => {
+                            app.state.set_target_path(path)?;
+                        }
+
                         _ => {}
                     }
                 }
@@ -110,6 +130,16 @@ async fn run_app(
                         Message::FileChanged | Message::MigrationCompleted => {
                             app.state.refresh()?;
                         }
+                        Message::ConfigChanged(config) => {
+                            app.state.update_config(config)?;
+                        }
+                        Message::SourceChanged(source) => {
+                            app.state.set_schema_dir(source)?;
+                        }
+                        Message::TargetChanged(path) => {
+                            app.state.set_target_path(path)?;
+                        }
+
                         _ => {}
                     }
                 }

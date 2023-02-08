@@ -44,18 +44,28 @@ regex!(WHITESPACE_RE, r"\s+");
 regex!(EXTRA_WHITESPACE_RE, r" *([(),]) *");
 regex!(QUOTES_RE, r#""(\w+)""#);
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Options {
     pub allow_deletions: bool,
     pub dry_run: bool,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Config {
     pub extensions: Vec<PathBuf>,
     pub ignore: Option<Regex>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct Settings {
+    pub(crate) options: Options,
+    pub(crate) config: Config,
 }
 
 pub struct Migrator {
     target_connection: Arc<Mutex<TargetConnection>>,
     pristine: PristineConnection,
-    options: Options,
+    settings: Settings,
     foreign_keys_enabled: bool,
 }
 
@@ -102,14 +112,11 @@ impl Migrator {
     pub fn new(
         schema: &[impl AsRef<str>],
         target_connection: Connection,
+        config: Config,
         options: Options,
     ) -> Result<Self, InitializationError> {
-        let mut target_connection = TargetConnection::new(
-            target_connection,
-            &options.extensions,
-            options.ignore.clone(),
-            options.dry_run,
-        );
+        let settings = Settings { config, options };
+        let mut target_connection = TargetConnection::new(target_connection, settings.clone());
         let foreign_keys_enabled = target_connection
             .get_pragma::<i32>("foreign_keys")
             .map_err(|e| {
@@ -129,13 +136,13 @@ impl Migrator {
                     )
                 })?;
         }
-        let mut pristine = PristineConnection::new(&options.extensions, options.ignore.clone())?;
+        let mut pristine = PristineConnection::new(settings.clone())?;
         pristine.initialize_schema(schema)?;
         Ok(Self {
             target_connection: Arc::new(Mutex::new(target_connection)),
             foreign_keys_enabled,
             pristine,
-            options,
+            settings,
         })
     }
 
@@ -149,12 +156,7 @@ impl Migrator {
     ) -> Result<(), MigrationError> {
         let connection_rc = self.target_connection.clone();
         let mut connection = connection_rc.lock().expect("Failed to lock mutex");
-        let mut tx = TargetTransaction::new(
-            &mut connection,
-            self.options.dry_run,
-            self.options.ignore.clone(),
-            on_script,
-        )?;
+        let mut tx = TargetTransaction::new(&mut connection, self.settings.clone(), on_script)?;
 
         let migration_span = span!(Level::INFO, "Starting migration");
         let _migration_guard = migration_span.entered();
@@ -305,7 +307,7 @@ impl Migrator {
             .filter(|k| !pristine_metadata.tables.contains_key(*k))
             .collect();
 
-        if !removed_tables.is_empty() && !self.options.allow_deletions {
+        if !removed_tables.is_empty() && !self.settings.options.allow_deletions {
             let removed_table_list = removed_tables
                 .into_iter()
                 .map(|t| t.to_owned())
@@ -393,7 +395,7 @@ impl Migrator {
         })?;
         let removed_cols: Vec<&String> =
             cols.iter().filter(|c| !pristine_cols.contains(c)).collect();
-        if !self.options.allow_deletions && !removed_cols.is_empty() {
+        if !self.settings.options.allow_deletions && !removed_cols.is_empty() {
             return Err(MigrationError::DataLoss(format!(
                 "The following columns would be dropped: {}",
                 removed_cols

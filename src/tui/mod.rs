@@ -16,3 +16,5 @@ mod app;
 pub use app::*;
 mod migrator_factory;
 pub use migrator_factory::*;
+mod reloadable_config;
+pub use reloadable_config::*;

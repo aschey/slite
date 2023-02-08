@@ -1,6 +1,9 @@
 use super::{MigrationState, MigrationView, MigratorFactory, SqlState, SqlView};
-use crate::error::{InitializationError, RefreshError, SqlFormatError};
-use std::marker::PhantomData;
+use crate::{
+    error::{InitializationError, RefreshError, SqlFormatError},
+    Config,
+};
+use std::{marker::PhantomData, path::PathBuf};
 use tokio::sync::mpsc;
 use tui::{
     layout::{Constraint, Direction, Layout},
@@ -20,6 +23,9 @@ pub enum Message {
     ProcessCompleted,
     MigrationCompleted,
     FileChanged,
+    ConfigChanged(Config),
+    SourceChanged(PathBuf),
+    TargetChanged(PathBuf),
 }
 
 #[derive(Default)]
@@ -114,6 +120,21 @@ impl<'a> AppState<'a> {
             diff_schema: SqlState::diff(schema.clone())?,
             migration: MigrationState::new(migrator_factory, message_tx),
         })
+    }
+
+    pub fn update_config(&mut self, config: Config) -> Result<(), RefreshError> {
+        self.migration.migrator_factory().set_config(config);
+        self.refresh()
+    }
+
+    pub fn set_schema_dir(&mut self, dir: PathBuf) -> Result<(), RefreshError> {
+        self.migration.migrator_factory().set_schema_dir(dir);
+        self.refresh()
+    }
+
+    pub fn set_target_path(&mut self, path: PathBuf) -> Result<(), RefreshError> {
+        self.migration.migrator_factory().set_target_path(path);
+        self.refresh()
     }
 
     pub fn refresh(&mut self) -> Result<(), RefreshError> {

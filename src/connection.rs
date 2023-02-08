@@ -6,7 +6,7 @@ use rusqlite::{
 };
 use tracing::{debug, span, trace, warn, Level};
 
-use crate::{InitializationError, MigrationError, QueryError, SqlPrinter};
+use crate::{InitializationError, MigrationError, QueryError, Settings, SqlPrinter};
 
 macro_rules! event {
     ($level:expr, $($args:tt)*) => {{
@@ -23,22 +23,19 @@ macro_rules! event {
 pub(crate) struct PristineConnection {
     connection: Connection,
     sql_printer: SqlPrinter,
-    ignore: Option<Regex>,
+    settings: Settings,
 }
 
 impl PristineConnection {
-    pub fn new(
-        extensions: impl AsRef<[PathBuf]>,
-        ignore: Option<Regex>,
-    ) -> Result<Self, InitializationError> {
+    pub fn new(settings: Settings) -> Result<Self, InitializationError> {
         let connection = Connection::open_in_memory()
             .map_err(|e| InitializationError::ConnectionFailure(":memory:".to_owned(), e))?;
-        load_extensions(&connection, extensions).unwrap();
+        load_extensions(&connection, &settings.config.extensions).unwrap();
 
         Ok(Self {
             connection,
             sql_printer: SqlPrinter::default(),
-            ignore,
+            settings,
         })
     }
 
@@ -77,7 +74,7 @@ impl PristineConnection {
             &self.connection,
             Level::TRACE,
             "Executing query against reference database",
-            &self.ignore,
+            &self.settings.config.ignore,
             &mut self.sql_printer,
         )
     }
@@ -101,8 +98,7 @@ where
     sql_printer: SqlPrinter,
     modified: bool,
     on_script: F,
-    ignore: Option<Regex>,
-    dry_run: bool,
+    settings: Settings,
 }
 
 impl<'conn, F> TargetTransaction<'conn, F>
@@ -111,8 +107,7 @@ where
 {
     pub fn new(
         target_connection: &'conn mut TargetConnection,
-        dry_run: bool,
-        ignore: Option<Regex>,
+        settings: Settings,
         on_script: F,
     ) -> Result<Self, MigrationError> {
         let transaction = target_connection
@@ -124,8 +119,7 @@ where
             sql_printer: SqlPrinter::default(),
             modified: false,
             on_script,
-            ignore,
-            dry_run,
+            settings,
         })
     }
 
@@ -143,7 +137,7 @@ where
             self.modified = true;
         }
 
-        if !self.dry_run {
+        if !self.settings.options.dry_run {
             let rows = self
                 .transaction
                 .execute(sql, [])
@@ -162,7 +156,7 @@ where
             &self.transaction,
             Level::DEBUG,
             "",
-            &self.ignore,
+            &self.settings.config.ignore,
             &mut self.sql_printer,
         )
     }
@@ -214,30 +208,23 @@ where
 pub(crate) struct TargetConnection {
     connection: Connection,
     sql_printer: SqlPrinter,
-    dry_run: bool,
-    ignore: Option<Regex>,
+    settings: Settings,
 }
 
 impl TargetConnection {
-    pub fn new(
-        connection: Connection,
-        extensions: impl AsRef<[PathBuf]>,
-        ignore: Option<Regex>,
-        dry_run: bool,
-    ) -> Self {
-        load_extensions(&connection, extensions).unwrap();
+    pub fn new(connection: Connection, settings: Settings) -> Self {
+        load_extensions(&connection, &settings.config.extensions).unwrap();
         Self {
             connection,
             sql_printer: SqlPrinter::default(),
-            dry_run,
-            ignore,
+            settings,
         }
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<(), QueryError> {
         debug!("\n\t{}", self.sql_printer.print(sql));
 
-        if !self.dry_run {
+        if !self.settings.options.dry_run {
             let rows = self
                 .connection
                 .execute(sql, [])
@@ -253,7 +240,7 @@ impl TargetConnection {
 
     pub fn vacuum(&mut self) -> Result<(), QueryError> {
         debug!("Optimizing database");
-        if !self.dry_run {
+        if !self.settings.options.dry_run {
             self.execute("VACUUM")?;
         }
         Ok(())
@@ -274,7 +261,7 @@ impl TargetConnection {
             &self.connection,
             Level::DEBUG,
             "",
-            &self.ignore,
+            &self.settings.config.ignore,
             &mut self.sql_printer,
         )
     }

@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use serde::{de::Visitor, Deserialize, Serialize};
 use slite::{
     read_sql_files,
-    tui::{BroadcastWriter, MigratorFactory},
+    tui::{BroadcastWriter, ConfigHandler, Message, MigratorFactory, ReloadableConfig},
     Migrator, Options, SqlPrinter,
 };
 use std::{
@@ -16,8 +16,14 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
+use tokio::sync::mpsc;
 use tracing::metadata::LevelFilter;
-use tracing_subscriber::{filter::Targets, prelude::*, util::SubscriberInitExt, Layer, Registry};
+use tracing_subscriber::{
+    prelude::*,
+    reload::{self, Handle},
+    util::SubscriberInitExt,
+    Layer, Registry,
+};
 use tracing_tree2::HierarchicalLayer;
 
 #[derive(ValueEnum, Clone)]
@@ -49,11 +55,19 @@ enum Command {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SerdeRegex(#[serde(with = "serde_regex")] Regex);
 
+impl PartialEq for SerdeRegex {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_str() == other.0.as_str()
+    }
+}
+
+impl Eq for SerdeRegex {}
+
 #[derive(thiserror::Error, Debug)]
 #[error("Error parsing log level: {0} is not a valid value")]
 pub struct LevelParseError(String);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerdeLevel(LevelFilter);
 
 impl FromStr for SerdeLevel {
@@ -114,17 +128,17 @@ impl<'de> Deserialize<'de> for SerdeLevel {
 }
 
 #[derive(Debug, Clone, Args, confique::Config, Serialize, Deserialize)]
-struct Conf {
+pub struct Conf {
     #[arg(short, long, value_parser=source_parser)]
-    source: Option<PathBuf>,
+    pub source: Option<PathBuf>,
     #[arg(short, long, value_parser=destination_parser)]
-    target: Option<PathBuf>,
+    pub target: Option<PathBuf>,
     #[arg(short, long, value_parser=extension_parser)]
-    extension: Option<Vec<PathBuf>>,
+    pub extension: Option<Vec<PathBuf>>,
     #[arg(short, long, value_parser=regex_parser)]
-    ignore: Option<SerdeRegex>,
+    pub ignore: Option<SerdeRegex>,
     #[arg(short, long)]
-    log_level: Option<SerdeLevel>,
+    pub log_level: Option<SerdeLevel>,
 }
 
 #[derive(clap::Parser)]
@@ -167,9 +181,76 @@ fn regex_parser(val: &str) -> Result<SerdeRegex, regex::Error> {
     Ok(SerdeRegex(Regex::new(val)?))
 }
 
+pub struct ConfigStore {
+    cli_config: Conf,
+    tx: mpsc::Sender<Message>,
+    reload_handle: Handle<LevelFilter, Registry>,
+}
+
+impl ConfigHandler<Conf> for ConfigStore {
+    fn on_update(
+        &mut self,
+        previous_config: std::sync::Arc<Conf>,
+        new_config: std::sync::Arc<Conf>,
+    ) {
+        if previous_config.source != new_config.source {
+            self.tx
+                .blocking_send(Message::SourceChanged(
+                    new_config.source.clone().unwrap_or_default(),
+                ))
+                .unwrap();
+        }
+        if previous_config.target != new_config.target {
+            self.tx
+                .blocking_send(Message::TargetChanged(
+                    new_config.target.clone().unwrap_or_default(),
+                ))
+                .unwrap();
+        }
+        if previous_config.log_level != new_config.log_level {
+            self.reload_handle
+                .modify(|l| {
+                    *l = new_config
+                        .log_level
+                        .as_ref()
+                        .unwrap_or(&SerdeLevel(LevelFilter::INFO))
+                        .0
+                })
+                .unwrap();
+        }
+        if previous_config.extension != new_config.extension
+            || previous_config.ignore != new_config.ignore
+        {
+            self.tx
+                .blocking_send(Message::ConfigChanged(slite::Config {
+                    extensions: new_config.extension.clone().unwrap_or_default(),
+                    ignore: new_config.ignore.clone().map(|r| r.0),
+                }))
+                .unwrap();
+        }
+    }
+
+    fn create_config(&self, path: &Path) -> Conf {
+        let cli_config = self.cli_config.clone();
+        let partial = confique_partial_conf::PartialConf {
+            source: cli_config.source,
+            target: cli_config.target,
+            extension: cli_config.extension,
+            ignore: cli_config.ignore,
+            log_level: cli_config.log_level,
+        };
+        Conf::builder()
+            .preloaded(partial)
+            .file(path)
+            .load()
+            .unwrap()
+    }
+}
+
 pub async fn run() -> Result<(), Report> {
     color_eyre::install()?;
     let cli = Cli::parse();
+    let cli_config = cli.config.clone();
     let partial = confique_partial_conf::PartialConf {
         source: cli.config.source,
         target: cli.config.target,
@@ -185,7 +266,9 @@ pub async fn run() -> Result<(), Report> {
     let source = conf.source.unwrap_or_default();
     let target = conf.target.unwrap_or_default();
     let extensions = conf.extension.unwrap_or_default();
+
     let ignore = conf.ignore.map(|i| i.0);
+    let config = slite::Config { extensions, ignore };
     let log_level = conf.log_level.unwrap_or(SerdeLevel(LevelFilter::INFO));
     let schema = read_sql_files(&source);
 
@@ -205,11 +288,10 @@ pub async fn run() -> Result<(), Report> {
                 let migrator = Migrator::new(
                     &schema,
                     target_db,
+                    config,
                     Options {
                         allow_deletions: true,
                         dry_run: false,
-                        extensions,
-                        ignore,
                     },
                 )?;
                 migrator.migrate()?;
@@ -227,11 +309,10 @@ pub async fn run() -> Result<(), Report> {
                 let migrator = Migrator::new(
                     &schema,
                     target_db,
+                    config,
                     Options {
                         allow_deletions: true,
                         dry_run: true,
-                        extensions,
-                        ignore,
                     },
                 )?;
                 migrator.migrate()?;
@@ -241,11 +322,10 @@ pub async fn run() -> Result<(), Report> {
                 let migrator = Migrator::new(
                     &schema,
                     target_db,
+                    config,
                     Options {
                         allow_deletions: true,
                         dry_run: true,
-                        extensions,
-                        ignore,
                     },
                 )?;
                 migrator.migrate_with_callback(|statement| println!("{statement}"))?;
@@ -257,11 +337,10 @@ pub async fn run() -> Result<(), Report> {
             let mut migrator = Migrator::new(
                 &schema,
                 source_db,
+                config,
                 Options {
                     allow_deletions: true,
                     dry_run: true,
-                    extensions,
-                    ignore,
                 },
             )?;
             let mut sql_printer = SqlPrinter::default();
@@ -283,11 +362,10 @@ pub async fn run() -> Result<(), Report> {
             let mut migrator = Migrator::new(
                 &schema,
                 target_db,
+                config,
                 Options {
                     allow_deletions: true,
                     dry_run: true,
-                    extensions,
-                    ignore,
                 },
             )?;
             println!("{}", migrator.diff()?);
@@ -309,17 +387,25 @@ pub async fn run() -> Result<(), Report> {
         }
 
         None => {
+            let (filter, reload_handle) = reload::Layer::new(log_level.0);
+
             Registry::default()
                 .with(
                     HierarchicalLayer::default()
                         .with_writer(BroadcastWriter::default())
                         .with_indent_lines(true)
                         .with_level(false)
-                        .with_filter(Targets::default().with_target("slite", log_level.0)),
+                        .with_filter(filter),
                 )
                 .init();
-
-            run_tui(MigratorFactory::new(source, target, extensions, ignore)?).await?;
+            let (tx, rx) = mpsc::channel(32);
+            let handler = ConfigStore {
+                tx: tx.clone(),
+                cli_config,
+                reload_handle,
+            };
+            let _reloadable = ReloadableConfig::new(PathBuf::from("slite.toml"), handler);
+            run_tui(MigratorFactory::new(source, target, config)?, tx, rx).await?;
         }
     }
 
