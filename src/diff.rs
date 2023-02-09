@@ -1,5 +1,5 @@
 use crate::{connection::Metadata, error::QueryError, unified_diff_builder::UnifiedDiffBuilder};
-use crate::{Migrator, SqlPrinter};
+use crate::{Migrator, SqlPrinter, OUTPUT_IS_TTY};
 use imara_diff::{diff, intern::InternedInput, Algorithm};
 use std::collections::BTreeMap;
 
@@ -16,11 +16,19 @@ impl Migrator {
 
 pub fn sql_diff(source: &str, target: &str) -> String {
     let input = InternedInput::new(target, source);
-    let diff_result = diff(
-        Algorithm::Histogram,
-        &input,
-        UnifiedDiffBuilder::new(&input),
-    );
+    let diff_result = if *OUTPUT_IS_TTY {
+        diff(
+            Algorithm::Histogram,
+            &input,
+            UnifiedDiffBuilder::new(&input),
+        )
+    } else {
+        diff(
+            Algorithm::Histogram,
+            &input,
+            imara_diff::UnifiedDiffBuilder::new(&input),
+        )
+    };
     if diff_result.is_empty() {
         return format!("\n  {}", SqlPrinter::default().print(target));
     }

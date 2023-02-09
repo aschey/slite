@@ -28,7 +28,7 @@ use rusqlite::Connection;
 use std::{
     collections::HashMap,
     fmt::Debug,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tracing::{debug, info, span, Level};
@@ -38,6 +38,14 @@ macro_rules! regex {
         static $name: Lazy<Regex> = Lazy::new(|| Regex::new($re).expect("Regex failed to compile"));
     };
 }
+
+#[allow(unused)]
+pub(crate) static OUTPUT_IS_TTY: Lazy<bool> = Lazy::new(|| {
+    #[cfg(feature = "atty")]
+    return atty::is(atty::Stream::Stdout);
+    #[cfg(not(feature = "atty"))]
+    return true;
+});
 
 regex!(COMMENTS_RE, r"--[^\n]*\n");
 regex!(WHITESPACE_RE, r"\s+");
@@ -93,7 +101,8 @@ pub fn read_sql_files(sql_dir: impl AsRef<std::path::Path>) -> Vec<String> {
         .collect()
 }
 
-fn get_sequence(path: &Path) -> i32 {
+#[cfg(feature = "read-files")]
+fn get_sequence(path: &std::path::Path) -> i32 {
     let path_str = path
         .file_name()
         .unwrap_or_default()

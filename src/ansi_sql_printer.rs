@@ -1,4 +1,4 @@
-use crate::Color;
+use crate::{Color, OUTPUT_IS_TTY};
 use once_cell::sync::OnceCell;
 use owo_colors::{AnsiColors, OwoColorize};
 use syntect::{
@@ -40,11 +40,19 @@ impl Default for SqlPrinter {
 
 impl SqlPrinter {
     pub fn print(&mut self, sql: &str) -> String {
-        self.print_inner(sql, None)
+        if *OUTPUT_IS_TTY {
+            self.print_inner(sql, None)
+        } else {
+            sql.to_owned()
+        }
     }
 
     pub fn print_on(&mut self, sql: &str, color: Color) -> String {
-        self.print_inner(sql, Some(color))
+        if *OUTPUT_IS_TTY {
+            self.print_inner(sql, Some(color))
+        } else {
+            sql.to_owned()
+        }
     }
 
     fn print_inner(&mut self, sql: &str, background: Option<Color>) -> String {

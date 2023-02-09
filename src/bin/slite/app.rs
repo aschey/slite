@@ -274,21 +274,13 @@ pub async fn run() -> Result<(), Report> {
 
     match cli.command {
         Some(command) => {
-            Registry::default()
-                .with(
-                    HierarchicalLayer::default()
-                        .with_indent_lines(true)
-                        .with_level(false)
-                        .with_filter(log_level.0),
-                )
-                .init();
             let target_db = Connection::open(target)?;
             let get_migrator =
                 |options: Options| Migrator::new(&schema, target_db, config, options);
 
             match command {
                 Command::Migrate { migrate } => {
-                    handle_migrate_command(migrate, get_migrator)?;
+                    handle_migrate_command(migrate, get_migrator, log_level)?;
                 }
                 Command::Print { from } => {
                     let migrator = get_migrator(Options {
@@ -319,9 +311,11 @@ pub async fn run() -> Result<(), Report> {
 fn handle_migrate_command(
     migrate: Migrate,
     get_migrator: impl FnOnce(Options) -> Result<Migrator, InitializationError>,
+    log_level: SerdeLevel,
 ) -> Result<(), Report> {
     match migrate {
         Migrate::Run => {
+            init_logger(log_level);
             get_migrator(Options {
                 allow_deletions: true,
                 dry_run: false,
@@ -329,6 +323,7 @@ fn handle_migrate_command(
             .migrate()?;
         }
         Migrate::DryRun => {
+            init_logger(log_level);
             get_migrator(Options {
                 allow_deletions: true,
                 dry_run: true,
@@ -378,6 +373,17 @@ fn handle_config_command(config: AppConfig) -> Result<(), Report> {
         },
     }
     Ok(())
+}
+
+fn init_logger(log_level: SerdeLevel) {
+    Registry::default()
+        .with(
+            HierarchicalLayer::default()
+                .with_indent_lines(true)
+                .with_level(false)
+                .with_filter(log_level.0),
+        )
+        .init();
 }
 
 async fn run_tui(
