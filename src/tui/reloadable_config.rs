@@ -9,10 +9,6 @@ use confique::Config;
 use notify::RecommendedWatcher;
 use notify_debouncer_mini::{new_debouncer, Debouncer};
 
-#[derive(thiserror::Error, Debug)]
-#[error("Error loading config file {0:#?}: {1}")]
-pub struct ConfigLoadError(pub(crate) PathBuf, pub(crate) String);
-
 pub trait ConfigHandler<T: Config + Send + Sync + 'static>: Send + 'static {
     fn on_update(&mut self, previous_config: Arc<T>, new_config: Arc<T>);
     fn create_config(&self, path: &Path) -> T;

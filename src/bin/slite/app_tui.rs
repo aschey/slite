@@ -84,24 +84,19 @@ async fn run_app(
     loop {
         terminal.draw(|f| ui(f, &mut app))?;
 
-        tokio::select! {
-            event = event_reader.next() => {
-                if let Some(event) = event {
+        let mut draw_pending = false;
+        loop {
+            tokio::select! {
+                biased;
+                Some(event) = event_reader.next() => {
                     if let ControlFlow::Quit = app.state.handle_event(event?)? {
                         return Ok(())
                     }
                 }
-            },
-            log = log_rx.recv() => {
-                if let Ok(log) = log {
+                Ok(log) = log_rx.recv() => {
                     app.state.add_log(log)?;
                 }
-                while let Ok(log) = log_rx.try_recv() {
-                    app.state.add_log(log)?;
-                }
-            }
-            message = message_rx.recv() => {
-                if let Some(message) = message {
+                Some(message) = message_rx.recv() => {
                     match message {
                         Message::Log(log) => {
                             app.state.add_log(format!("{log}\n"))?;
@@ -118,32 +113,14 @@ async fn run_app(
                         Message::TargetChanged(path) => {
                             app.state.set_target_path(path)?;
                         }
-
                         _ => {}
                     }
                 }
-                while let Ok(message) = message_rx.try_recv() {
-                    match message {
-                        Message::Log(log) => {
-                            app.state.add_log(format!("{log}\n"))?;
-                        }
-                        Message::FileChanged | Message::MigrationCompleted => {
-                            app.state.refresh()?;
-                        }
-                        Message::ConfigChanged(config) => {
-                            app.state.update_config(config)?;
-                        }
-                        Message::SourceChanged(source) => {
-                            app.state.set_schema_dir(source)?;
-                        }
-                        Message::TargetChanged(path) => {
-                            app.state.set_target_path(path)?;
-                        }
-
-                        _ => {}
-                    }
+                _ = futures::future::ready(()), if draw_pending => {
+                    break;
                 }
             }
+            draw_pending = true;
         }
     }
 }

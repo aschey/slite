@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 #[derive(thiserror::Error, Debug)]
 pub enum InitializationError {
     #[error("{0}: {1}")]
@@ -39,3 +41,7 @@ pub enum RefreshError {
     #[error("{0}")]
     InitializationFailure(#[source] InitializationError),
 }
+
+#[derive(thiserror::Error, Debug)]
+#[error("Error loading config file {0}: {1}")]
+pub struct ConfigLoadError(pub(crate) PathBuf, pub(crate) String);
