@@ -92,7 +92,7 @@ impl PristineConnection {
 
 pub(crate) struct TargetTransaction<'conn, F>
 where
-    F: Fn(String),
+    F: FnMut(String),
 {
     transaction: Transaction<'conn>,
     sql_printer: SqlPrinter,
@@ -103,7 +103,7 @@ where
 
 impl<'conn, F> TargetTransaction<'conn, F>
 where
-    F: Fn(String),
+    F: FnMut(String),
 {
     pub fn new(
         target_connection: &'conn mut TargetConnection,

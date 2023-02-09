@@ -33,10 +33,13 @@ impl<T: Config + Send + Sync + 'static> ReloadableConfig<T> {
             handler.on_update(previous_config, new_config);
         })
         .unwrap();
-        debouncer
-            .watcher()
-            .watch(&path, notify::RecursiveMode::NonRecursive)
-            .unwrap();
+        if path.exists() {
+            debouncer
+                .watcher()
+                .watch(&path, notify::RecursiveMode::NonRecursive)
+                .unwrap();
+        }
+
         Self {
             _debouncer: debouncer,
             cached_config,

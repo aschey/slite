@@ -6,7 +6,8 @@ mod app_tui;
 #[cfg(feature = "application")]
 #[tokio::main]
 pub async fn main() -> Result<(), color_eyre::eyre::Report> {
-    app::run().await
+    let app = app::App::from_args()?;
+    app.run().await
 }
 
 #[cfg(not(feature = "application"))]

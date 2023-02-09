@@ -39,14 +39,6 @@ macro_rules! regex {
     };
 }
 
-#[allow(unused)]
-pub(crate) static OUTPUT_IS_TTY: Lazy<bool> = Lazy::new(|| {
-    #[cfg(feature = "atty")]
-    return atty::is(atty::Stream::Stdout);
-    #[cfg(not(feature = "atty"))]
-    return true;
-});
-
 regex!(COMMENTS_RE, r"--[^\n]*\n");
 regex!(WHITESPACE_RE, r"\s+");
 regex!(EXTRA_WHITESPACE_RE, r" *([(),]) *");
@@ -161,7 +153,7 @@ impl Migrator {
 
     pub fn migrate_with_callback(
         mut self,
-        on_script: impl Fn(String),
+        on_script: impl FnMut(String),
     ) -> Result<(), MigrationError> {
         let connection_rc = self.target_connection.clone();
         let mut connection = connection_rc.lock().expect("Failed to lock mutex");
@@ -201,7 +193,7 @@ impl Migrator {
 
     fn migrate_inner<F>(&mut self, tx: &mut TargetTransaction<F>) -> Result<(), MigrationError>
     where
-        F: Fn(String),
+        F: FnMut(String),
     {
         if self.foreign_keys_enabled {
             tx.execute("PRAGMA defer_foreign_keys = TRUE")
@@ -249,7 +241,7 @@ impl Migrator {
         pristine_metadata: &Metadata,
     ) -> Result<(), MigrationError>
     where
-        F: Fn(String),
+        F: FnMut(String),
     {
         let table_span = span!(Level::INFO, "Migrating tables");
         let _table_guard = table_span.entered();
@@ -275,7 +267,7 @@ impl Migrator {
         metadata: &Metadata,
     ) -> Result<(), MigrationError>
     where
-        F: Fn(String),
+        F: FnMut(String),
     {
         let create_table_span = span!(Level::INFO, "Creating tables");
         let _create_table_guard = create_table_span.entered();
@@ -305,7 +297,7 @@ impl Migrator {
         metadata: &Metadata,
     ) -> Result<(), MigrationError>
     where
-        F: Fn(String),
+        F: FnMut(String),
     {
         let drop_table_span = span!(Level::INFO, "Dropping tables");
         let _drop_table_guard = drop_table_span.entered();
@@ -347,7 +339,7 @@ impl Migrator {
         metadata: &Metadata,
     ) -> Result<(), MigrationError>
     where
-        F: Fn(String),
+        F: FnMut(String),
     {
         let modify_table_span = span!(Level::INFO, "Modifying tables");
         let _modify_table_guard = modify_table_span.entered();
@@ -380,7 +372,7 @@ impl Migrator {
         modified_table_sql: &str,
     ) -> Result<(), MigrationError>
     where
-        F: Fn(String),
+        F: FnMut(String),
     {
         info!("Modifying table {modified_table}");
         let temp_table = format!("{modified_table}_migration_new");
@@ -450,7 +442,7 @@ impl Migrator {
         pristine_metadata: &Metadata,
     ) -> Result<(), MigrationError>
     where
-        F: Fn(String),
+        F: FnMut(String),
     {
         let index_span = span!(Level::INFO, "Migrating indexes");
         let _index_guard = index_span.entered();

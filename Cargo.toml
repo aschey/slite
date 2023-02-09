@@ -22,10 +22,11 @@ crossterm = {version = "0.25", optional = true}
 futures = {version = "0.3.26", optional = true}
 ignore = {version = "0.4.20", optional = true}
 imara-diff = {version = "0.1", optional = true}
+minus = {version = "5.1.0", features = ["dynamic_output"], optional = true}
 notify = {version = "5.1.0", default_features = false, features = ["macos_fsevent"], optional = true}
 notify-debouncer-mini = {version = "0.2.1", default_features = false, optional = true}
 once_cell = "1"
-owo-colors = {version = "3", optional = true}
+owo-colors = {version = "3", features = ["supports-colors"], optional = true}
 regex = "1"
 rusqlite = {version = "0.28", features = ["bundled", "load_extension"]}
 serde = {version = "1.0.152", optional = true}
@@ -57,11 +58,13 @@ application = [
   "serde_regex",
   "confique",
   "arc-swap",
+  "minus",
+  "atty",
 ]
 crossterm-events = ["crossterm"]
 default = ["application"]
-diff = ["imara-diff", "atty"]
-pretty-print = ["owo-colors", "syntect", "atty"]
+diff = ["imara-diff"]
+pretty-print = ["owo-colors", "syntect"]
 read-files = ["ignore"]
 tui = ["dep:tui", "tokio", "tracing-subscriber", "crossterm", "read-files", "chrono"]
 

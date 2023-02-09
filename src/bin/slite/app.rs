@@ -2,6 +2,7 @@ use crate::app_tui::{self};
 use clap::{Args, Parser, ValueEnum};
 use color_eyre::Report;
 use confique::{toml, Config};
+use minus::Pager;
 use owo_colors::OwoColorize;
 use regex::Regex;
 use rusqlite::Connection;
@@ -13,13 +14,15 @@ use slite::{
     Migrator, Options, SqlPrinter,
 };
 use std::{
-    fs,
+    fmt::Write,
+    fs, io,
     path::{Path, PathBuf},
     str::FromStr,
 };
 use tokio::sync::mpsc;
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::{
+    fmt::MakeWriter,
     prelude::*,
     reload::{self, Handle},
     util::SubscriberInitExt,
@@ -128,6 +131,31 @@ impl<'de> Deserialize<'de> for SerdeLevel {
     }
 }
 
+struct PagerWrapper {
+    pager: Pager,
+}
+
+impl io::Write for PagerWrapper {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        write!(self.pager, "{}", std::str::from_utf8(buf).unwrap()).unwrap();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> MakeWriter<'a> for PagerWrapper {
+    type Writer = Self;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        Self {
+            pager: self.pager.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Args, confique::Config, Serialize, Deserialize)]
 pub struct Conf {
     #[arg(short, long, value_parser = source_parser)]
@@ -140,6 +168,8 @@ pub struct Conf {
     pub ignore: Option<SerdeRegex>,
     #[arg(short, long)]
     pub log_level: Option<SerdeLevel>,
+    #[arg(short, long)]
+    pub use_pager: Option<bool>,
 }
 
 #[derive(clap::Parser)]
@@ -239,6 +269,7 @@ impl ConfigHandler<Conf> for ConfigStore {
             extension: cli_config.extension,
             ignore: cli_config.ignore,
             log_level: cli_config.log_level,
+            use_pager: cli_config.use_pager,
         };
         Conf::builder()
             .preloaded(partial)
@@ -248,169 +279,255 @@ impl ConfigHandler<Conf> for ConfigStore {
     }
 }
 
-pub async fn run() -> Result<(), Report> {
-    color_eyre::install()?;
-    let cli = Cli::parse();
-    let cli_config = cli.config.clone();
-    let partial = confique_partial_conf::PartialConf {
-        source: cli.config.source,
-        target: cli.config.target,
-        extension: cli.config.extension,
-        ignore: cli.config.ignore,
-        log_level: cli.config.log_level,
-    };
-    let conf = Conf::builder()
-        .preloaded(partial)
-        .file("slite.toml")
-        .load()?;
-
-    let source = conf.source.unwrap_or_default();
-    let target = conf.target.unwrap_or_default();
-    let extensions = conf.extension.unwrap_or_default();
-    let ignore = conf.ignore.map(|i| i.0);
-    let config = slite::Config { extensions, ignore };
-    let log_level = conf.log_level.unwrap_or(SerdeLevel(LevelFilter::INFO));
-    let schema = read_sql_files(&source);
-
-    match cli.command {
-        Some(command) => {
-            let target_db = Connection::open(target)?;
-            let get_migrator =
-                |options: Options| Migrator::new(&schema, target_db, config, options);
-
-            match command {
-                Command::Migrate { migrate } => {
-                    handle_migrate_command(migrate, get_migrator, log_level)?;
-                }
-                Command::Print { from } => {
-                    let migrator = get_migrator(Options {
-                        allow_deletions: true,
-                        dry_run: true,
-                    })?;
-                    print_schema(migrator, from)?;
-                }
-                Command::Diff => {
-                    let mut migrator = get_migrator(Options {
-                        allow_deletions: true,
-                        dry_run: true,
-                    })?;
-                    println!("{}", migrator.diff()?);
-                }
-                Command::Config { config } => {
-                    handle_config_command(config)?;
-                }
-            }
-        }
-        None => {
-            run_tui(log_level, cli_config, source, target, config).await?;
-        }
-    }
-    Ok(())
-}
-
-fn handle_migrate_command(
-    migrate: Migrate,
-    get_migrator: impl FnOnce(Options) -> Result<Migrator, InitializationError>,
-    log_level: SerdeLevel,
-) -> Result<(), Report> {
-    match migrate {
-        Migrate::Run => {
-            init_logger(log_level);
-            get_migrator(Options {
-                allow_deletions: true,
-                dry_run: false,
-            })?
-            .migrate()?;
-        }
-        Migrate::DryRun => {
-            init_logger(log_level);
-            get_migrator(Options {
-                allow_deletions: true,
-                dry_run: true,
-            })?
-            .migrate()?;
-        }
-        Migrate::Script => {
-            get_migrator(Options {
-                allow_deletions: true,
-                dry_run: true,
-            })?
-            .migrate_with_callback(|statement| println!("{statement}"))?;
-        }
-    }
-    Ok(())
-}
-
-fn print_schema(mut migrator: Migrator, from: SchemaType) -> Result<(), Report> {
-    let mut sql_printer = SqlPrinter::default();
-    let metadata = migrator.parse_metadata()?;
-    let source = match from {
-        SchemaType::Source => metadata.source,
-        SchemaType::Target => metadata.target,
-    };
-    for (_, sql) in source.tables {
-        println!("{}", sql_printer.print(&sql));
-    }
-    for (_, sql) in source.indexes {
-        println!("{}", sql_printer.print(&sql));
-    }
-    Ok(())
-}
-
-fn handle_config_command(config: AppConfig) -> Result<(), Report> {
-    match config {
-        AppConfig::Generate => match Path::new("slite.toml").try_exists() {
-            Ok(true) => println!(
-                "{}",
-                "Config file slite.toml already exists. Remove the file before regenerating."
-                    .yellow()
-            ),
-            Ok(false) => fs::write(
-                "slite.toml",
-                toml::template::<Conf>(toml::FormatOptions::default()),
-            )?,
-            Err(e) => println!("{}", format!("Error checking for config file: {e}").red()),
-        },
-    }
-    Ok(())
-}
-
-fn init_logger(log_level: SerdeLevel) {
-    Registry::default()
-        .with(
-            HierarchicalLayer::default()
-                .with_indent_lines(true)
-                .with_level(false)
-                .with_filter(log_level.0),
-        )
-        .init();
-}
-
-async fn run_tui(
-    log_level: SerdeLevel,
-    cli_config: Conf,
+pub struct App {
+    cli: Cli,
     source: PathBuf,
     target: PathBuf,
+    schema: Vec<String>,
     config: slite::Config,
-) -> Result<(), Report> {
-    let (filter, reload_handle) = reload::Layer::new(log_level.0);
-    Registry::default()
-        .with(
-            HierarchicalLayer::default()
-                .with_writer(BroadcastWriter::default())
-                .with_indent_lines(true)
-                .with_level(false)
-                .with_filter(filter),
-        )
-        .init();
-    let (tx, rx) = mpsc::channel(32);
-    let handler = ConfigStore {
-        tx: tx.clone(),
-        cli_config,
-        reload_handle,
-    };
-    let _reloadable = ReloadableConfig::new(PathBuf::from("slite.toml"), handler);
-    app_tui::run_tui(MigratorFactory::new(source, target, config)?, tx, rx).await?;
+    log_level: LevelFilter,
+    pager: Option<Pager>,
+    cli_config: Conf,
+}
 
-    Ok(())
+impl App {
+    pub fn from_args() -> Result<Self, Report> {
+        owo_colors::set_override(atty::is(atty::Stream::Stdout));
+        color_eyre::install()?;
+
+        let cli = Cli::parse();
+        let cli_config = cli.config.clone();
+        let cli_config_ = cli_config.clone();
+        let partial = confique_partial_conf::PartialConf {
+            source: cli_config.source,
+            target: cli_config.target,
+            extension: cli_config.extension,
+            ignore: cli_config.ignore,
+            log_level: cli_config.log_level,
+            use_pager: cli_config.use_pager,
+        };
+        let conf = Conf::builder()
+            .preloaded(partial)
+            .file("slite.toml")
+            .load()?;
+
+        let source = conf.source.unwrap_or_default();
+        let target = conf.target.unwrap_or_default();
+        let extensions = conf.extension.unwrap_or_default();
+        let ignore = conf.ignore.map(|i| i.0);
+        let config = slite::Config { extensions, ignore };
+        let log_level = conf.log_level.unwrap_or(SerdeLevel(LevelFilter::INFO));
+        let schema = read_sql_files(&source);
+
+        let pager = if conf.use_pager.unwrap_or_default()
+            && cli.command.is_some()
+            && atty::is(atty::Stream::Stdout)
+        {
+            let output = minus::Pager::new();
+
+            let output_ = output.clone();
+            tokio::task::spawn_blocking(move || minus::dynamic_paging(output_));
+            Some(output)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            cli,
+            source,
+            target,
+            schema,
+            config,
+            pager,
+            cli_config: cli_config_,
+            log_level: log_level.0,
+        })
+    }
+
+    pub async fn run(mut self) -> Result<(), Report> {
+        match self.cli.command.clone() {
+            Some(command) => {
+                let target_db = Connection::open(self.target.clone())?;
+
+                match command {
+                    Command::Migrate { migrate } => {
+                        self.handle_migrate_command(&migrate, target_db)?;
+                    }
+                    Command::Print { from } => {
+                        let migrator = self.get_migrator(
+                            Options {
+                                allow_deletions: true,
+                                dry_run: true,
+                            },
+                            target_db,
+                        )?;
+                        self.print_schema(migrator, &from)?;
+                    }
+                    Command::Diff => {
+                        let mut migrator = self.get_migrator(
+                            Options {
+                                allow_deletions: true,
+                                dry_run: true,
+                            },
+                            target_db,
+                        )?;
+                        self.write(&migrator.diff()?)?;
+                    }
+                    Command::Config { config } => {
+                        self.handle_config_command(&config)?;
+                    }
+                }
+            }
+            None => {
+                self.run_tui().await?;
+            }
+        }
+        Ok(())
+    }
+
+    fn init_logger(&mut self) {
+        if let Some(pager) = self.pager.as_mut() {
+            Registry::default()
+                .with(
+                    HierarchicalLayer::default()
+                        .with_writer(PagerWrapper {
+                            pager: pager.clone(),
+                        })
+                        .with_indent_lines(true)
+                        .with_level(false)
+                        .with_filter(self.log_level),
+                )
+                .init();
+        } else {
+            Registry::default()
+                .with(
+                    HierarchicalLayer::default()
+                        .with_indent_lines(true)
+                        .with_level(false)
+                        .with_filter(self.log_level),
+                )
+                .init();
+        }
+    }
+
+    fn write(&mut self, out: &str) -> Result<(), Report> {
+        if let Some(pager) = self.pager.as_mut() {
+            writeln!(pager, "{out}")?;
+        } else {
+            println!("{out}");
+        }
+        Ok(())
+    }
+
+    fn get_migrator(
+        &self,
+        options: Options,
+        target_db: Connection,
+    ) -> Result<Migrator, InitializationError> {
+        Migrator::new(&self.schema, target_db, self.config.clone(), options)
+    }
+
+    fn handle_migrate_command(
+        &mut self,
+        migrate: &Migrate,
+        target_db: Connection,
+    ) -> Result<(), Report> {
+        match migrate {
+            Migrate::Run => {
+                self.init_logger();
+                self.get_migrator(
+                    Options {
+                        allow_deletions: true,
+                        dry_run: false,
+                    },
+                    target_db,
+                )?
+                .migrate()?;
+            }
+            Migrate::DryRun => {
+                self.init_logger();
+                self.get_migrator(
+                    Options {
+                        allow_deletions: true,
+                        dry_run: true,
+                    },
+                    target_db,
+                )?
+                .migrate()?;
+            }
+            Migrate::Script => {
+                self.get_migrator(
+                    Options {
+                        allow_deletions: true,
+                        dry_run: true,
+                    },
+                    target_db,
+                )?
+                .migrate_with_callback(|statement| self.write(&statement).unwrap())?;
+            }
+        }
+        Ok(())
+    }
+
+    fn print_schema(&mut self, mut migrator: Migrator, from: &SchemaType) -> Result<(), Report> {
+        let mut sql_printer = SqlPrinter::default();
+        let metadata = migrator.parse_metadata()?;
+        let source = match from {
+            SchemaType::Source => metadata.source,
+            SchemaType::Target => metadata.target,
+        };
+        for (_, sql) in source.tables {
+            self.write(&sql_printer.print(&sql))?;
+        }
+        for (_, sql) in source.indexes {
+            self.write(&sql_printer.print(&sql))?;
+        }
+        Ok(())
+    }
+
+    fn handle_config_command(&self, config: &AppConfig) -> Result<(), Report> {
+        match config {
+            AppConfig::Generate => match Path::new("slite.toml").try_exists() {
+                Ok(true) => println!(
+                    "{}",
+                    "Config file slite.toml already exists. Remove the file before regenerating."
+                        .yellow()
+                ),
+                Ok(false) => fs::write(
+                    "slite.toml",
+                    toml::template::<Conf>(toml::FormatOptions::default()),
+                )?,
+                Err(e) => println!("{}", format!("Error checking for config file: {e}").red()),
+            },
+        }
+        Ok(())
+    }
+
+    async fn run_tui(self) -> Result<(), Report> {
+        let (filter, reload_handle) = reload::Layer::new(self.log_level);
+        Registry::default()
+            .with(
+                HierarchicalLayer::default()
+                    .with_writer(BroadcastWriter::default())
+                    .with_indent_lines(true)
+                    .with_level(false)
+                    .with_filter(filter),
+            )
+            .init();
+        let (tx, rx) = mpsc::channel(32);
+        let handler = ConfigStore {
+            tx: tx.clone(),
+            cli_config: self.cli_config,
+            reload_handle,
+        };
+        let _reloadable = ReloadableConfig::new(PathBuf::from("slite.toml"), handler);
+        app_tui::run_tui(
+            MigratorFactory::new(self.source, self.target, self.config)?,
+            tx,
+            rx,
+        )
+        .await?;
+
+        Ok(())
+    }
 }

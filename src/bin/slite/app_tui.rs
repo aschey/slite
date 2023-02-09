@@ -15,16 +15,16 @@ use std::{
 use tokio::sync::mpsc;
 use tui::{backend::CrosstermBackend, Frame, Terminal};
 
-struct App<'a> {
+struct TuiApp<'a> {
     state: AppState<'a>,
     _debouncer: Debouncer<RecommendedWatcher>,
 }
 
-impl<'a> App<'a> {
+impl<'a> TuiApp<'a> {
     fn new(
         migrator_factory: MigratorFactory,
         message_tx: mpsc::Sender<Message>,
-    ) -> Result<App<'a>, Report> {
+    ) -> Result<TuiApp<'a>, Report> {
         let message_tx_ = message_tx.clone();
         let mut debouncer = new_debouncer(
             Duration::from_millis(250),
@@ -39,7 +39,7 @@ impl<'a> App<'a> {
             .watcher()
             .watch(migrator_factory.schema_dir(), RecursiveMode::Recursive)?;
 
-        Ok(App {
+        Ok(TuiApp {
             state: AppState::new(migrator_factory, message_tx)?,
             _debouncer: debouncer,
         })
@@ -57,7 +57,7 @@ pub async fn run_tui(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let app = App::new(migrator_factory, message_tx)?;
+    let app = TuiApp::new(migrator_factory, message_tx)?;
     let res = run_app(&mut terminal, app, message_rx).await;
 
     disable_raw_mode()?;
@@ -75,7 +75,7 @@ pub async fn run_tui(
 
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    mut app: App<'static>,
+    mut app: TuiApp<'static>,
     mut message_rx: mpsc::Receiver<Message>,
 ) -> Result<(), Report> {
     let mut event_reader = EventStream::new().fuse();
@@ -126,6 +126,6 @@ async fn run_app(
     }
 }
 
-fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
+fn ui(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut TuiApp) {
     f.render_stateful_widget(slite::tui::App::default(), f.size(), &mut app.state)
 }
