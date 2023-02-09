@@ -226,6 +226,21 @@ impl Migrator {
             self.migrate_objects(tx, indexes, &pristine_metadata.indexes, "index", "indexes")?;
         }
 
+        let views = &tx
+            .parse_metadata()
+            .map_err(|e| {
+                MigrationError::QueryFailure(
+                    "Failed to get metadata from current database".to_owned(),
+                    e,
+                )
+            })?
+            .views;
+        {
+            let object_span = span!(Level::INFO, "Migrating views");
+            let _object_guard = object_span.entered();
+            self.migrate_objects(tx, views, &pristine_metadata.views, "view", "views")?;
+        }
+
         let triggers = &tx
             .parse_metadata()
             .map_err(|e| {

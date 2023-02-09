@@ -402,6 +402,7 @@ pub struct Metadata {
     pub tables: BTreeMap<String, String>,
     pub indexes: BTreeMap<String, String>,
     pub triggers: BTreeMap<String, String>,
+    pub views: BTreeMap<String, String>,
 }
 
 fn parse_metadata(
@@ -411,9 +412,13 @@ fn parse_metadata(
     ignore: &Option<Regex>,
     sql_printer: &mut SqlPrinter,
 ) -> Result<Metadata, QueryError> {
+    let metadata_sql = |name: &str| {
+        format!("SELECT name, sql from sqlite_master WHERE type = '{name}' and name != 'sqlite_sequence' AND sql IS NOT NULL")
+    };
+
     let tables = select_metadata(
         connection,
-        "SELECT name, sql from sqlite_master WHERE type = 'table' and name != 'sqlite_sequence' AND sql IS NOT NULL",
+        &metadata_sql("table"),
         log_level,
         msg,
         ignore,
@@ -422,7 +427,7 @@ fn parse_metadata(
 
     let indexes = select_metadata(
         connection,
-        "SELECT name, sql from sqlite_master WHERE type = 'index' and name != 'sqlite_sequence' AND sql IS NOT NULL",
+        &metadata_sql("index"),
         log_level,
         msg,
         ignore,
@@ -431,7 +436,16 @@ fn parse_metadata(
 
     let triggers = select_metadata(
         connection,
-        "SELECT name, sql from sqlite_master WHERE type = 'trigger' and name != 'sqlite_sequence' AND sql IS NOT NULL",
+        &metadata_sql("trigger"),
+        log_level,
+        msg,
+        ignore,
+        sql_printer,
+    )?;
+
+    let views = select_metadata(
+        connection,
+        &metadata_sql("view"),
         log_level,
         msg,
         ignore,
@@ -441,6 +455,7 @@ fn parse_metadata(
         tables,
         indexes,
         triggers,
+        views,
     })
 }
 

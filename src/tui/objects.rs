@@ -70,7 +70,12 @@ pub struct ObjectsState {
 }
 
 impl ObjectsState {
-    pub fn new(tables: Vec<String>, indexes: Vec<String>, triggers: Vec<String>) -> ObjectsState {
+    pub fn new(
+        tables: Vec<String>,
+        indexes: Vec<String>,
+        views: Vec<String>,
+        triggers: Vec<String>,
+    ) -> ObjectsState {
         let mut list_items = vec![];
         let mut has_items = false;
 
@@ -81,6 +86,10 @@ impl ObjectsState {
         has_items |= !indexes.is_empty();
         list_items.push(ListItemType::Header("Indexes".to_owned()));
         list_items.extend(indexes.into_iter().map(ListItemType::Entry));
+
+        has_items |= !views.is_empty();
+        list_items.push(ListItemType::Header("Views".to_owned()));
+        list_items.extend(views.into_iter().map(ListItemType::Entry));
 
         has_items |= !triggers.is_empty();
         list_items.push(ListItemType::Header("Triggers".to_owned()));
@@ -101,7 +110,7 @@ impl ObjectsState {
         }
         ObjectsState {
             state,
-            adjusted_size: list_items.len() as i32 - 3,
+            adjusted_size: list_items.len() as i32 - 4,
             objects: list_items,
             object_view_width: max_length,
             has_items,

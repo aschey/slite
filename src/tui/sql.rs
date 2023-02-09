@@ -85,6 +85,16 @@ impl SqlState {
         indexes.sort();
         indexes.dedup();
 
+        let mut views: Vec<String> = schemas
+            .target
+            .views
+            .keys()
+            .chain(schemas.source.views.keys())
+            .map(|k| k.to_owned())
+            .collect();
+        views.sort();
+        views.dedup();
+
         let mut triggers: Vec<String> = schemas
             .target
             .triggers
@@ -113,6 +123,14 @@ impl SqlState {
                 diff.into_text()
                     .map_err(|e| SqlFormatError::TextFormattingFailure(diff, e))
             }))
+            .chain(views.iter().map(|t| {
+                let diff = sql_diff(
+                    &schemas.source.views.get(t).cloned().unwrap_or_default(),
+                    &schemas.target.views.get(t).cloned().unwrap_or_default(),
+                );
+                diff.into_text()
+                    .map_err(|e| SqlFormatError::TextFormattingFailure(diff, e))
+            }))
             .chain(triggers.iter().map(|t| {
                 let diff = sql_diff(
                     &schemas.source.triggers.get(t).cloned().unwrap_or_default(),
@@ -123,7 +141,7 @@ impl SqlState {
             }))
             .collect();
 
-        let state = ObjectsState::new(tables, indexes, triggers);
+        let state = ObjectsState::new(tables, indexes, views, triggers);
 
         Ok(Self::new(list_items?, state))
     }
@@ -131,15 +149,15 @@ impl SqlState {
     pub fn schema(schema: Metadata) -> Result<Self, SqlFormatError> {
         let mut printer = SqlPrinter::default();
         let tables: Vec<String> = schema.tables.keys().map(|k| k.to_owned()).collect();
-
         let indexes: Vec<String> = schema.indexes.keys().map(|k| k.to_owned()).collect();
-
+        let views: Vec<String> = schema.views.keys().map(|k| k.to_owned()).collect();
         let triggers: Vec<String> = schema.triggers.keys().map(|k| k.to_owned()).collect();
 
         let list_items: Result<Vec<_>, _> = schema
             .tables
             .values()
             .chain(schema.indexes.values())
+            .chain(schema.views.values())
             .chain(schema.triggers.values())
             .map(|v| {
                 printer
@@ -149,7 +167,7 @@ impl SqlState {
             })
             .collect();
 
-        let state = ObjectsState::new(tables, indexes, triggers);
+        let state = ObjectsState::new(tables, indexes, views, triggers);
         Ok(Self::new(list_items?, state))
     }
 
