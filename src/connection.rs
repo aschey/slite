@@ -401,6 +401,7 @@ fn select_metadata(
 pub struct Metadata {
     pub tables: BTreeMap<String, String>,
     pub indexes: BTreeMap<String, String>,
+    pub triggers: BTreeMap<String, String>,
 }
 
 fn parse_metadata(
@@ -427,7 +428,20 @@ fn parse_metadata(
         ignore,
         sql_printer,
     )?;
-    Ok(Metadata { tables, indexes })
+
+    let triggers = select_metadata(
+        connection,
+        "SELECT name, sql from sqlite_master WHERE type = 'trigger' and name != 'sqlite_sequence' AND sql IS NOT NULL",
+        log_level,
+        msg,
+        ignore,
+        sql_printer,
+    )?;
+    Ok(Metadata {
+        tables,
+        indexes,
+        triggers,
+    })
 }
 
 fn get_cols(

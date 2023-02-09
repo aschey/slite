@@ -1,5 +1,5 @@
 use crate::app_tui::{self};
-use clap::{Args, Parser, ValueEnum};
+use clap::{ArgAction, Args, Parser, ValueEnum};
 use color_eyre::Report;
 use confique::{toml, Config};
 use minus::Pager;
@@ -168,8 +168,8 @@ pub struct Conf {
     pub ignore: Option<SerdeRegex>,
     #[arg(short, long)]
     pub log_level: Option<SerdeLevel>,
-    #[arg(short, long)]
-    pub use_pager: Option<bool>,
+    #[arg(short, long, action = ArgAction::SetTrue)]
+    pub pager: Option<bool>,
 }
 
 #[derive(clap::Parser)]
@@ -269,7 +269,7 @@ impl ConfigHandler<Conf> for ConfigStore {
             extension: cli_config.extension,
             ignore: cli_config.ignore,
             log_level: cli_config.log_level,
-            use_pager: cli_config.use_pager,
+            pager: cli_config.pager,
         };
         Conf::builder()
             .preloaded(partial)
@@ -304,7 +304,7 @@ impl App {
             extension: cli_config.extension,
             ignore: cli_config.ignore,
             log_level: cli_config.log_level,
-            use_pager: cli_config.use_pager,
+            pager: cli_config.pager,
         };
         let conf = Conf::builder()
             .preloaded(partial)
@@ -319,7 +319,7 @@ impl App {
         let log_level = conf.log_level.unwrap_or(SerdeLevel(LevelFilter::INFO));
         let schema = read_sql_files(&source);
 
-        let pager = if conf.use_pager.unwrap_or_default()
+        let pager = if conf.pager.unwrap_or_default()
             && cli.command.is_some()
             && atty::is(atty::Stream::Stdout)
         {
@@ -480,6 +480,9 @@ impl App {
             self.write(&sql_printer.print(&sql))?;
         }
         for (_, sql) in source.indexes {
+            self.write(&sql_printer.print(&sql))?;
+        }
+        for (_, sql) in source.triggers {
             self.write(&sql_printer.print(&sql))?;
         }
         Ok(())

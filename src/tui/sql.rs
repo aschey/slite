@@ -85,6 +85,16 @@ impl SqlState {
         indexes.sort();
         indexes.dedup();
 
+        let mut triggers: Vec<String> = schemas
+            .target
+            .triggers
+            .keys()
+            .chain(schemas.source.triggers.keys())
+            .map(|k| k.to_owned())
+            .collect();
+        triggers.sort();
+        triggers.dedup();
+
         let list_items: Result<Vec<_>, _> = tables
             .iter()
             .map(|t| {
@@ -103,9 +113,17 @@ impl SqlState {
                 diff.into_text()
                     .map_err(|e| SqlFormatError::TextFormattingFailure(diff, e))
             }))
+            .chain(triggers.iter().map(|t| {
+                let diff = sql_diff(
+                    &schemas.source.triggers.get(t).cloned().unwrap_or_default(),
+                    &schemas.target.triggers.get(t).cloned().unwrap_or_default(),
+                );
+                diff.into_text()
+                    .map_err(|e| SqlFormatError::TextFormattingFailure(diff, e))
+            }))
             .collect();
 
-        let state = ObjectsState::new(tables, indexes);
+        let state = ObjectsState::new(tables, indexes, triggers);
 
         Ok(Self::new(list_items?, state))
     }
@@ -116,10 +134,13 @@ impl SqlState {
 
         let indexes: Vec<String> = schema.indexes.keys().map(|k| k.to_owned()).collect();
 
+        let triggers: Vec<String> = schema.triggers.keys().map(|k| k.to_owned()).collect();
+
         let list_items: Result<Vec<_>, _> = schema
             .tables
             .values()
             .chain(schema.indexes.values())
+            .chain(schema.triggers.values())
             .map(|v| {
                 printer
                     .print(v)
@@ -128,7 +149,7 @@ impl SqlState {
             })
             .collect();
 
-        let state = ObjectsState::new(tables, indexes);
+        let state = ObjectsState::new(tables, indexes, triggers);
         Ok(Self::new(list_items?, state))
     }
 

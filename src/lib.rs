@@ -26,7 +26,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use rusqlite::Connection;
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt::Debug,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -210,7 +210,42 @@ impl Migrator {
         })?;
 
         self.migrate_tables(tx, &pristine_metadata)?;
-        self.migrate_indexes(tx, &pristine_metadata)?;
+        let indexes = &tx
+            .parse_metadata()
+            .map_err(|e| {
+                MigrationError::QueryFailure(
+                    "Failed to get metadata from current database".to_owned(),
+                    e,
+                )
+            })?
+            .indexes;
+
+        {
+            let object_span = span!(Level::INFO, "Migrating indexes");
+            let _object_guard = object_span.entered();
+            self.migrate_objects(tx, indexes, &pristine_metadata.indexes, "index", "indexes")?;
+        }
+
+        let triggers = &tx
+            .parse_metadata()
+            .map_err(|e| {
+                MigrationError::QueryFailure(
+                    "Failed to get metadata from current database".to_owned(),
+                    e,
+                )
+            })?
+            .triggers;
+        {
+            let object_span = span!(Level::INFO, "Migrating triggers");
+            let _object_guard = object_span.entered();
+            self.migrate_objects(
+                tx,
+                triggers,
+                &pristine_metadata.triggers,
+                "trigger",
+                "triggers",
+            )?;
+        }
 
         if self
             .pristine
@@ -436,67 +471,63 @@ impl Migrator {
         Ok(())
     }
 
-    fn migrate_indexes<F>(
+    fn migrate_objects<F>(
         &mut self,
         tx: &mut TargetTransaction<F>,
-        pristine_metadata: &Metadata,
+        target_metadata: &BTreeMap<String, String>,
+        pristine_metadata: &BTreeMap<String, String>,
+        object_name: &str,
+        object_name_plural: &str,
     ) -> Result<(), MigrationError>
     where
         F: FnMut(String),
     {
-        let index_span = span!(Level::INFO, "Migrating indexes");
-        let _index_guard = index_span.entered();
-
-        let metadata = tx.parse_metadata().map_err(|e| {
-            MigrationError::QueryFailure(
-                "Failed to get metadata from current database".to_owned(),
-                e,
-            )
-        })?;
-
-        let old_indexes: Vec<_> = metadata
-            .indexes
+        let old_objects: Vec<_> = target_metadata
             .keys()
-            .filter(|k| !pristine_metadata.indexes.contains_key(*k))
+            .filter(|k| !pristine_metadata.contains_key(*k))
             .collect();
 
-        if old_indexes.is_empty() {
-            info!("No indexes to drop");
+        if old_objects.is_empty() {
+            info!("No {object_name_plural} to drop");
         }
 
-        for index in old_indexes {
-            info!("Dropping index {index}");
-            tx.execute(&format!("DROP INDEX {index}")).map_err(|e| {
-                MigrationError::QueryFailure(format!("Failed to drop index {index}"), e)
-            })?;
+        for object in old_objects {
+            info!("Dropping {object_name} {object}");
+            tx.execute(&format!("DROP {} {object}", object_name.to_uppercase()))
+                .map_err(|e| {
+                    MigrationError::QueryFailure(
+                        format!("Failed to drop {object_name} {object}"),
+                        e,
+                    )
+                })?;
         }
-        let mut index_updated = false;
-        let mut index_created = false;
-        for (index_name, sql) in &pristine_metadata.indexes {
-            match metadata.indexes.get(index_name) {
-                Some(old_index) if normalize_sql(sql) != normalize_sql(old_index) => {
-                    index_updated = true;
-                    info!("Updating index {index_name}");
-                    tx.execute(&format!("DROP INDEX {index_name}"))
+        let mut object_updated = false;
+        let mut object_created = false;
+        for (object, sql) in pristine_metadata {
+            match target_metadata.get(object) {
+                Some(old_object) if normalize_sql(sql) != normalize_sql(old_object) => {
+                    object_updated = true;
+                    info!("Updating {object_name} {object}");
+                    tx.execute(&format!("DROP {} {object}", object_name.to_uppercase()))
                         .map_err(|e| {
                             MigrationError::QueryFailure(
-                                format!("Error dropping index {index_name}"),
+                                format!("Error dropping {object_name} {object}"),
                                 e,
                             )
                         })?;
                     tx.execute(sql).map_err(|e| {
                         MigrationError::QueryFailure(
-                            format!("Error creating index {index_name}"),
+                            format!("Error creating {object_name} {object}"),
                             e,
                         )
                     })?;
                 }
                 None => {
-                    index_created = true;
-                    info!("Creating index {index_name}");
+                    object_created = true;
+                    info!("Creating {object_name} {object}");
                     tx.execute(sql).map_err(|e| {
                         MigrationError::QueryFailure(
-                            format!("Error creating index {index_name}"),
+                            format!("Error creating {object_name} {object}"),
                             e,
                         )
                     })?;
@@ -504,11 +535,11 @@ impl Migrator {
                 _ => {}
             }
         }
-        if !index_created {
-            info!("No indexes to create");
+        if !object_created {
+            info!("No {object_name_plural} to create");
         }
-        if !index_updated {
-            info!("No indexes to update");
+        if !object_updated {
+            info!("No {object_name_plural} to update");
         }
 
         Ok(())
