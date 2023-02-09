@@ -40,5 +40,5 @@ fn build_schema_string(metadata: &BTreeMap<String, String>) -> String {
         .values()
         .map(|v| v.to_owned())
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n\n")
 }

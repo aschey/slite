@@ -116,6 +116,7 @@ async fn run_app(
                         _ => {}
                     }
                 }
+                // If we hit this branch then no other messages are ready, re-draw and wait for the next message
                 _ = futures::future::ready(()), if draw_pending => {
                     break;
                 }
