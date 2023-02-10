@@ -1,5 +1,6 @@
 use crate::app_tui::{self};
-use clap::{ArgAction, Args, Parser, ValueEnum};
+use clap::{ArgAction, Args, CommandFactory, Parser, ValueEnum};
+use clap_complete::{generate, Shell};
 use color_eyre::Report;
 use confique::{toml, Config};
 use minus::Pager;
@@ -55,6 +56,7 @@ enum Command {
     Config { config: AppConfig },
     Diff,
     Print { from: SchemaType },
+    Completions { shell: Shell },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -451,6 +453,14 @@ impl App {
 
     pub async fn run(mut self) -> Result<(), Report> {
         match self.cli.command.clone() {
+            Some(Command::Completions { shell }) => {
+                generate(
+                    shell,
+                    &mut Cli::command(),
+                    Cli::command().get_name().to_string(),
+                    &mut io::stdout(),
+                );
+            }
             Some(command) => {
                 let target_db = Connection::open(self.target.clone())?;
 
@@ -481,6 +491,7 @@ impl App {
                     Command::Config { config } => {
                         self.handle_config_command(&config)?;
                     }
+                    _ => {}
                 }
             }
             None => {
