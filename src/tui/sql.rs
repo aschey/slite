@@ -1,5 +1,5 @@
 use super::{panel, BiPanel, BiPanelState, Objects, ObjectsState, Scrollable, ScrollableState};
-use crate::{error::SqlFormatError, sql_diff, Metadata, MigrationMetadata, SqlPrinter};
+use crate::{diff_objects, error::SqlFormatError, Metadata, MigrationMetadata, SqlPrinter};
 use ansi_to_tui::IntoText;
 use tui::{
     layout::{Constraint, Direction, Layout},
@@ -65,93 +65,28 @@ pub struct SqlState {
 
 impl SqlState {
     pub fn diff(schemas: MigrationMetadata) -> Result<Self, SqlFormatError> {
-        let mut tables: Vec<String> = schemas
-            .target
-            .tables
-            .keys()
-            .chain(schemas.source.tables.keys())
-            .map(|k| k.to_owned())
-            .collect();
-        tables.sort();
-        tables.dedup();
+        let objects = schemas.clone().into_objects();
 
-        let mut indexes: Vec<String> = schemas
-            .target
-            .indexes
-            .keys()
-            .chain(schemas.source.indexes.keys())
-            .map(|k| k.to_owned())
-            .collect();
-        indexes.sort();
-        indexes.dedup();
-
-        let mut views: Vec<String> = schemas
-            .target
-            .views
-            .keys()
-            .chain(schemas.source.views.keys())
-            .map(|k| k.to_owned())
-            .collect();
-        views.sort();
-        views.dedup();
-
-        let mut triggers: Vec<String> = schemas
-            .target
-            .triggers
-            .keys()
-            .chain(schemas.source.triggers.keys())
-            .map(|k| k.to_owned())
-            .collect();
-        triggers.sort();
-        triggers.dedup();
-
-        let list_items: Result<Vec<_>, _> = tables
-            .iter()
-            .map(|t| {
-                let diff = sql_diff(
-                    &schemas.source.tables.get(t).cloned().unwrap_or_default(),
-                    &schemas.target.tables.get(t).cloned().unwrap_or_default(),
-                );
-                diff.into_text()
-                    .map_err(|e| SqlFormatError::TextFormattingFailure(diff, e))
+        let list_items: Result<Vec<_>, _> = diff_objects(schemas)
+            .into_iter()
+            .map(|diff| {
+                let text = if diff.diff_text.is_empty() {
+                    diff.original_text
+                } else {
+                    diff.diff_text
+                };
+                text.into_text()
+                    .map_err(|e| SqlFormatError::TextFormattingFailure(text, e))
             })
-            .chain(indexes.iter().map(|t| {
-                let diff = sql_diff(
-                    &schemas.source.indexes.get(t).cloned().unwrap_or_default(),
-                    &schemas.target.indexes.get(t).cloned().unwrap_or_default(),
-                );
-                diff.into_text()
-                    .map_err(|e| SqlFormatError::TextFormattingFailure(diff, e))
-            }))
-            .chain(views.iter().map(|t| {
-                let diff = sql_diff(
-                    &schemas.source.views.get(t).cloned().unwrap_or_default(),
-                    &schemas.target.views.get(t).cloned().unwrap_or_default(),
-                );
-                diff.into_text()
-                    .map_err(|e| SqlFormatError::TextFormattingFailure(diff, e))
-            }))
-            .chain(triggers.iter().map(|t| {
-                let diff = sql_diff(
-                    &schemas.source.triggers.get(t).cloned().unwrap_or_default(),
-                    &schemas.target.triggers.get(t).cloned().unwrap_or_default(),
-                );
-                diff.into_text()
-                    .map_err(|e| SqlFormatError::TextFormattingFailure(diff, e))
-            }))
             .collect();
 
-        let state = ObjectsState::new(tables, indexes, views, triggers);
+        let state = ObjectsState::new(objects);
 
         Ok(Self::new(list_items?, state))
     }
 
     pub fn schema(schema: Metadata) -> Result<Self, SqlFormatError> {
         let mut printer = SqlPrinter::default();
-        let tables: Vec<String> = schema.tables.keys().map(|k| k.to_owned()).collect();
-        let indexes: Vec<String> = schema.indexes.keys().map(|k| k.to_owned()).collect();
-        let views: Vec<String> = schema.views.keys().map(|k| k.to_owned()).collect();
-        let triggers: Vec<String> = schema.triggers.keys().map(|k| k.to_owned()).collect();
 
         let list_items: Result<Vec<_>, _> = schema
             .tables
@@ -167,7 +102,7 @@ impl SqlState {
             })
             .collect();
 
-        let state = ObjectsState::new(tables, indexes, views, triggers);
+        let state = ObjectsState::new(schema.into_objects());
         Ok(Self::new(list_items?, state))
     }
 

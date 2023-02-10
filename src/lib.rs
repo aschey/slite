@@ -578,6 +578,55 @@ pub struct MigrationMetadata {
     pub target: Metadata,
 }
 
+impl MigrationMetadata {
+    pub fn into_objects(self) -> Objects {
+        let source_objects = self.source.into_objects();
+        let target_objects = self.target.into_objects();
+        source_objects.merge(target_objects)
+    }
+}
+
+pub struct Objects {
+    pub tables: Vec<String>,
+    pub indexes: Vec<String>,
+    pub views: Vec<String>,
+    pub triggers: Vec<String>,
+}
+
+impl Objects {
+    pub fn merge(self, other: Self) -> Self {
+        Self {
+            tables: sorted_merge(self.tables, other.tables),
+            indexes: sorted_merge(self.indexes, other.indexes),
+            views: sorted_merge(self.views, other.views),
+            triggers: sorted_merge(self.triggers, other.triggers),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tables.is_empty()
+            && self.indexes.is_empty()
+            && self.views.is_empty()
+            && self.triggers.is_empty()
+    }
+
+    pub fn all(&self) -> Vec<&String> {
+        self.tables
+            .iter()
+            .chain(self.indexes.iter())
+            .chain(self.views.iter())
+            .chain(self.triggers.iter())
+            .collect()
+    }
+}
+
+fn sorted_merge(a: Vec<String>, b: Vec<String>) -> Vec<String> {
+    let mut merged: Vec<_> = a.into_iter().chain(b.into_iter()).collect();
+    merged.sort();
+    merged.dedup();
+    merged
+}
+
 fn normalize_sql(sql: &str) -> String {
     let sql = COMMENTS_RE.replace_all(sql, "");
     let sql = WHITESPACE_RE.replace_all(&sql, " ");

@@ -6,7 +6,7 @@ use rusqlite::{
 };
 use tracing::{debug, span, trace, warn, Level};
 
-use crate::{InitializationError, MigrationError, QueryError, Settings, SqlPrinter};
+use crate::{InitializationError, MigrationError, Objects, QueryError, Settings, SqlPrinter};
 
 macro_rules! event {
     ($level:expr, $($args:tt)*) => {{
@@ -405,6 +405,17 @@ pub struct Metadata {
     pub views: BTreeMap<String, String>,
 }
 
+impl Metadata {
+    pub fn into_objects(self) -> Objects {
+        Objects {
+            tables: self.tables.into_keys().collect(),
+            indexes: self.indexes.into_keys().collect(),
+            views: self.views.into_keys().collect(),
+            triggers: self.triggers.into_keys().collect(),
+        }
+    }
+}
+
 fn parse_metadata(
     connection: &Connection,
     log_level: Level,
@@ -413,7 +424,7 @@ fn parse_metadata(
     sql_printer: &mut SqlPrinter,
 ) -> Result<Metadata, QueryError> {
     let metadata_sql = |name: &str| {
-        format!("SELECT name, sql from sqlite_master WHERE type = '{name}' and name != 'sqlite_sequence' AND sql IS NOT NULL")
+        format!("SELECT name, sql from sqlite_master WHERE type = '{name}' and name != 'sqlite_sequence' AND sql IS NOT NULL ORDER BY name")
     };
 
     let tables = select_metadata(

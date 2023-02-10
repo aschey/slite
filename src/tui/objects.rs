@@ -69,38 +69,30 @@ pub struct ObjectsState {
     adjusted_size: i32,
 }
 
+const LIST_PADDING: usize = 5;
+const NUM_HEADERS: i32 = 4;
+
 impl ObjectsState {
-    pub fn new(
-        tables: Vec<String>,
-        indexes: Vec<String>,
-        views: Vec<String>,
-        triggers: Vec<String>,
-    ) -> ObjectsState {
-        let mut list_items = vec![];
-        let mut has_items = false;
-
-        has_items |= !tables.is_empty();
-        list_items.push(ListItemType::Header("Tables".to_owned()));
-        list_items.extend(tables.into_iter().map(ListItemType::Entry));
-
-        has_items |= !indexes.is_empty();
-        list_items.push(ListItemType::Header("Indexes".to_owned()));
-        list_items.extend(indexes.into_iter().map(ListItemType::Entry));
-
-        has_items |= !views.is_empty();
-        list_items.push(ListItemType::Header("Views".to_owned()));
-        list_items.extend(views.into_iter().map(ListItemType::Entry));
-
-        has_items |= !triggers.is_empty();
-        list_items.push(ListItemType::Header("Triggers".to_owned()));
-        list_items.extend(triggers.into_iter().map(ListItemType::Entry));
+    pub fn new(objects: crate::Objects) -> ObjectsState {
+        let has_items = !objects.is_empty();
+        let list_items: Vec<_> = vec![]
+            .into_iter()
+            .chain([ListItemType::Header("Tables".to_owned())])
+            .chain(objects.tables.into_iter().map(ListItemType::Entry))
+            .chain([ListItemType::Header("Indexes".to_owned())])
+            .chain(objects.indexes.into_iter().map(ListItemType::Entry))
+            .chain([ListItemType::Header("Views".to_owned())])
+            .chain(objects.views.into_iter().map(ListItemType::Entry))
+            .chain([ListItemType::Header("Triggers".to_owned())])
+            .chain(objects.triggers.into_iter().map(ListItemType::Entry))
+            .collect();
 
         let max_length = list_items
             .iter()
             .map(|o| match o {
                 ListItemType::Header(header) => header.len(),
                 ListItemType::Entry(title) => title.len()
-            }+5)
+            }+LIST_PADDING)
             .max()
             .unwrap_or_default();
 
@@ -110,7 +102,7 @@ impl ObjectsState {
         }
         ObjectsState {
             state,
-            adjusted_size: list_items.len() as i32 - 4,
+            adjusted_size: list_items.len() as i32 - NUM_HEADERS,
             objects: list_items,
             object_view_width: max_length,
             has_items,
