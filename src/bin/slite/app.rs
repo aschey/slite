@@ -3,6 +3,7 @@ use clap::{ArgAction, Args, Parser, ValueEnum};
 use color_eyre::Report;
 use confique::{toml, Config};
 use minus::Pager;
+use notify_debouncer_mini::DebouncedEvent;
 use owo_colors::OwoColorize;
 use regex::Regex;
 use rusqlite::Connection;
@@ -160,6 +161,10 @@ impl<'a> MakeWriter<'a> for PagerWrapper {
 pub struct Conf {
     #[arg(short, long, value_parser = source_parser)]
     pub source: Option<PathBuf>,
+    #[arg(short, long, value_parser = source_parser)]
+    pub before_migration: Option<PathBuf>,
+    #[arg(short, long, value_parser = source_parser)]
+    pub after_migration: Option<PathBuf>,
     #[arg(short, long, value_parser = destination_parser)]
     pub target: Option<PathBuf>,
     #[arg(short, long, value_parser = extension_parser)]
@@ -223,6 +228,7 @@ impl ConfigHandler<Conf> for ConfigStore {
         &mut self,
         previous_config: std::sync::Arc<Conf>,
         new_config: std::sync::Arc<Conf>,
+        events: Vec<DebouncedEvent>,
     ) {
         if previous_config.source != new_config.source {
             self.tx
@@ -251,11 +257,53 @@ impl ConfigHandler<Conf> for ConfigStore {
         }
         if previous_config.extension != new_config.extension
             || previous_config.ignore != new_config.ignore
+            || previous_config.before_migration != new_config.before_migration
+            || previous_config.after_migration != new_config.after_migration
         {
             self.tx
                 .blocking_send(Message::ConfigChanged(slite::Config {
                     extensions: new_config.extension.clone().unwrap_or_default(),
                     ignore: new_config.ignore.clone().map(|r| r.0),
+                    before_migration: new_config
+                        .before_migration
+                        .clone()
+                        .map(read_sql_files)
+                        .unwrap_or_default(),
+                    after_migration: new_config
+                        .after_migration
+                        .clone()
+                        .map(read_sql_files)
+                        .unwrap_or_default(),
+                }))
+                .unwrap();
+        }
+
+        if events.iter().any(|e| {
+            new_config
+                .before_migration
+                .as_ref()
+                .map(|p| e.path.starts_with(p))
+                .unwrap_or(false)
+                || new_config
+                    .after_migration
+                    .as_ref()
+                    .map(|p| e.path.starts_with(p))
+                    .unwrap_or(false)
+        }) {
+            self.tx
+                .blocking_send(Message::ConfigChanged(slite::Config {
+                    extensions: new_config.extension.clone().unwrap_or_default(),
+                    ignore: new_config.ignore.clone().map(|r| r.0),
+                    before_migration: new_config
+                        .before_migration
+                        .clone()
+                        .map(read_sql_files)
+                        .unwrap_or_default(),
+                    after_migration: new_config
+                        .after_migration
+                        .clone()
+                        .map(read_sql_files)
+                        .unwrap_or_default(),
                 }))
                 .unwrap();
         }
@@ -266,6 +314,8 @@ impl ConfigHandler<Conf> for ConfigStore {
         let partial = confique_partial_conf::PartialConf {
             source: cli_config.source,
             target: cli_config.target,
+            before_migration: cli_config.before_migration,
+            after_migration: cli_config.after_migration,
             extension: cli_config.extension,
             ignore: cli_config.ignore,
             log_level: cli_config.log_level,
@@ -276,6 +326,18 @@ impl ConfigHandler<Conf> for ConfigStore {
             .file(path)
             .load()
             .unwrap()
+    }
+
+    fn watch_paths(&self, path: &Path) -> Vec<PathBuf> {
+        let config = self.create_config(path);
+        let mut paths = vec![path.to_path_buf()];
+        if let Some(before) = config.before_migration {
+            paths.push(before);
+        }
+        if let Some(after) = config.after_migration {
+            paths.push(after);
+        }
+        paths
     }
 }
 
@@ -305,6 +367,8 @@ impl App {
             ignore: cli_config.ignore,
             log_level: cli_config.log_level,
             pager: cli_config.pager,
+            before_migration: cli_config.before_migration,
+            after_migration: cli_config.after_migration,
         };
         let conf = Conf::builder()
             .preloaded(partial)
@@ -315,7 +379,17 @@ impl App {
         let target = conf.target.unwrap_or_default();
         let extensions = conf.extension.unwrap_or_default();
         let ignore = conf.ignore.map(|i| i.0);
-        let config = slite::Config { extensions, ignore };
+        let before_migration = conf
+            .before_migration
+            .map(read_sql_files)
+            .unwrap_or_default();
+        let after_migration = conf.after_migration.map(read_sql_files).unwrap_or_default();
+        let config = slite::Config {
+            extensions,
+            ignore,
+            before_migration,
+            after_migration,
+        };
         let log_level = conf.log_level.unwrap_or(SerdeLevel(LevelFilter::INFO));
         let schema = read_sql_files(&source);
 

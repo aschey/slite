@@ -54,6 +54,8 @@ pub struct Options {
 pub struct Config {
     pub extensions: Vec<PathBuf>,
     pub ignore: Option<Regex>,
+    pub before_migration: Vec<String>,
+    pub after_migration: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -116,7 +118,10 @@ impl Migrator {
         config: Config,
         options: Options,
     ) -> Result<Self, InitializationError> {
-        let settings = Settings { config, options };
+        let settings = Settings {
+            config: config.clone(),
+            options,
+        };
         let mut target_connection = TargetConnection::new(target_connection, settings.clone());
         let foreign_keys_enabled = target_connection
             .get_pragma::<i32>("foreign_keys")
@@ -138,7 +143,14 @@ impl Migrator {
                 })?;
         }
         let mut pristine = PristineConnection::new(settings.clone())?;
-        pristine.initialize_schema(schema)?;
+        pristine.initialize_schema(
+            config
+                .before_migration
+                .iter()
+                .map(|s| s.as_ref())
+                .chain(schema.iter().map(|s| s.as_ref()))
+                .chain(config.after_migration.iter().map(|s| s.as_ref())),
+        )?;
         Ok(Self {
             target_connection: Arc::new(Mutex::new(target_connection)),
             foreign_keys_enabled,
@@ -162,6 +174,7 @@ impl Migrator {
         let migration_span = span!(Level::INFO, "Starting migration");
         let _migration_guard = migration_span.entered();
         let migrate_result = self.migrate_inner(&mut tx);
+
         let result = match migrate_result {
             Ok(()) => {
                 let modified = tx.modified();
@@ -199,6 +212,18 @@ impl Migrator {
             tx.execute("PRAGMA defer_foreign_keys = TRUE")
                 .map_err(|e| {
                     MigrationError::QueryFailure("Error enabling defer_foreign_keys".to_owned(), e)
+                })?;
+        }
+
+        if !self.settings.config.before_migration.is_empty() {
+            let object_span = span!(Level::INFO, "Executing pre-migration scripts");
+            let _object_guard = object_span.entered();
+            tx.execute_batch(&self.settings.config.before_migration)
+                .map_err(|e| {
+                    MigrationError::QueryFailure(
+                        "Error executing pre-migration scripts".to_owned(),
+                        e,
+                    )
                 })?;
         }
 
@@ -260,6 +285,17 @@ impl Migrator {
                 "trigger",
                 "triggers",
             )?;
+        }
+        if !self.settings.config.after_migration.is_empty() {
+            let object_span = span!(Level::INFO, "Executing post-migration scripts");
+            let _object_guard = object_span.entered();
+            tx.execute_batch(&self.settings.config.after_migration)
+                .map_err(|e| {
+                    MigrationError::QueryFailure(
+                        "Error executing post-migration scripts".to_owned(),
+                        e,
+                    )
+                })?;
         }
 
         if self

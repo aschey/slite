@@ -39,9 +39,9 @@ impl PristineConnection {
         })
     }
 
-    pub fn initialize_schema(
+    pub fn initialize_schema<S: AsRef<str>>(
         &mut self,
-        schema: &[impl AsRef<str>],
+        schema: impl IntoIterator<Item = S>,
     ) -> Result<(), InitializationError> {
         let init_span = span!(Level::TRACE, "Initializing schema in reference database");
         let _guard = init_span.entered();
@@ -148,6 +148,20 @@ where
             }
         }
 
+        Ok(())
+    }
+
+    pub fn execute_batch(&mut self, statements: &Vec<String>) -> Result<(), QueryError> {
+        for statement in statements {
+            let formatted_sql = self.sql_printer.print(statement);
+            debug!("\n\t{formatted_sql}");
+            (self.on_script)(formatted_sql);
+            if !self.settings.options.dry_run {
+                self.transaction
+                    .execute_batch(statement)
+                    .map_err(|e| QueryError(statement.to_string(), e))?;
+            }
+        }
         Ok(())
     }
 
