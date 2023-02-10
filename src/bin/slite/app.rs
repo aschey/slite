@@ -233,6 +233,7 @@ impl ConfigHandler<Conf> for ConfigStore {
         if previous_config.source != new_config.source {
             self.tx
                 .blocking_send(Message::SourceChanged(
+                    previous_config.source.clone().unwrap_or_default(),
                     new_config.source.clone().unwrap_or_default(),
                 ))
                 .unwrap();
@@ -240,6 +241,7 @@ impl ConfigHandler<Conf> for ConfigStore {
         if previous_config.target != new_config.target {
             self.tx
                 .blocking_send(Message::TargetChanged(
+                    previous_config.target.clone().unwrap_or_default(),
                     new_config.target.clone().unwrap_or_default(),
                 ))
                 .unwrap();
@@ -260,6 +262,22 @@ impl ConfigHandler<Conf> for ConfigStore {
             || previous_config.before_migration != new_config.before_migration
             || previous_config.after_migration != new_config.after_migration
         {
+            if previous_config.before_migration != new_config.before_migration {
+                self.tx
+                    .blocking_send(Message::PathChanged(
+                        previous_config.before_migration.clone(),
+                        new_config.before_migration.clone(),
+                    ))
+                    .unwrap();
+            }
+            if previous_config.after_migration != new_config.after_migration {
+                self.tx
+                    .blocking_send(Message::PathChanged(
+                        previous_config.after_migration.clone(),
+                        new_config.after_migration.clone(),
+                    ))
+                    .unwrap();
+            }
             self.tx
                 .blocking_send(Message::ConfigChanged(slite::Config {
                     extensions: new_config.extension.clone().unwrap_or_default(),
@@ -276,6 +294,16 @@ impl ConfigHandler<Conf> for ConfigStore {
                         .unwrap_or_default(),
                 }))
                 .unwrap();
+        }
+
+        if events.iter().any(|e| {
+            new_config
+                .source
+                .as_ref()
+                .map(|p| e.path.starts_with(p))
+                .unwrap_or(false)
+        }) {
+            self.tx.blocking_send(Message::FileChanged).unwrap();
         }
 
         if events.iter().any(|e| {
@@ -331,6 +359,9 @@ impl ConfigHandler<Conf> for ConfigStore {
     fn watch_paths(&self, path: &Path) -> Vec<PathBuf> {
         let config = self.create_config(path);
         let mut paths = vec![path.to_path_buf()];
+        if let Some(source) = config.source {
+            paths.push(source);
+        }
         if let Some(before) = config.before_migration {
             paths.push(before);
         }
@@ -597,11 +628,12 @@ impl App {
             cli_config: self.cli_config,
             reload_handle,
         };
-        let _reloadable = ReloadableConfig::new(PathBuf::from("slite.toml"), handler);
+        let reloadable = ReloadableConfig::new(PathBuf::from("slite.toml"), handler);
         app_tui::run_tui(
             MigratorFactory::new(self.source, self.target, self.config)?,
             tx,
             rx,
+            reloadable,
         )
         .await?;
 

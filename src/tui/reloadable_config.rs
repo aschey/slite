@@ -6,7 +6,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use confique::Config;
-use notify::RecommendedWatcher;
+use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
 
 pub trait ConfigHandler<T: Config + Send + Sync + 'static>: Send + 'static {
@@ -23,7 +23,7 @@ pub trait ConfigHandler<T: Config + Send + Sync + 'static>: Send + 'static {
 pub struct ReloadableConfig<T: Config + Send + Sync + 'static> {
     current_config: Arc<ArcSwap<T>>,
     cached_config: Arc<ArcSwap<T>>,
-    _debouncer: Debouncer<RecommendedWatcher>,
+    debouncer: Debouncer<RecommendedWatcher>,
 }
 
 impl<T: Config + Send + Sync + 'static> ReloadableConfig<T> {
@@ -47,13 +47,13 @@ impl<T: Config + Send + Sync + 'static> ReloadableConfig<T> {
             if path.exists() {
                 debouncer
                     .watcher()
-                    .watch(&path, notify::RecursiveMode::Recursive)
+                    .watch(&path, RecursiveMode::Recursive)
                     .unwrap();
             }
         }
 
         Self {
-            _debouncer: debouncer,
+            debouncer,
             cached_config,
             current_config,
         }
@@ -67,5 +67,22 @@ impl<T: Config + Send + Sync + 'static> ReloadableConfig<T> {
         let current = self.current_config.load_full();
         self.cached_config.store(current.clone());
         current
+    }
+
+    pub fn switch_path(&mut self, old_path: Option<&Path>, new_path: Option<&Path>) {
+        if let Some(old_path) = old_path {
+            if old_path.exists() {
+                self.debouncer.watcher().unwatch(old_path).unwrap();
+            }
+        }
+
+        if let Some(new_path) = new_path {
+            if new_path.exists() {
+                self.debouncer
+                    .watcher()
+                    .watch(new_path, RecursiveMode::Recursive)
+                    .unwrap();
+            }
+        }
     }
 }

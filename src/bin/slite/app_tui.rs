@@ -5,19 +5,17 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures::StreamExt;
-use notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_mini::{new_debouncer, Debouncer};
-use slite::tui::{AppState, BroadcastWriter, ControlFlow, Message, MigratorFactory};
-use std::{
-    io::{self, Stdout},
-    time::Duration,
+use slite::tui::{
+    AppState, BroadcastWriter, ControlFlow, Message, MigratorFactory, ReloadableConfig,
 };
+use std::io::{self, Stdout};
 use tokio::sync::mpsc;
 use tui::{backend::CrosstermBackend, Frame, Terminal};
 
+use crate::app::Conf;
+
 struct TuiApp<'a> {
     state: AppState<'a>,
-    _debouncer: Debouncer<RecommendedWatcher>,
 }
 
 impl<'a> TuiApp<'a> {
@@ -25,23 +23,8 @@ impl<'a> TuiApp<'a> {
         migrator_factory: MigratorFactory,
         message_tx: mpsc::Sender<Message>,
     ) -> Result<TuiApp<'a>, Report> {
-        let message_tx_ = message_tx.clone();
-        let mut debouncer = new_debouncer(
-            Duration::from_millis(250),
-            None,
-            move |events: Result<_, _>| {
-                if events.is_ok() {
-                    message_tx_.blocking_send(Message::FileChanged).unwrap();
-                }
-            },
-        )?;
-        debouncer
-            .watcher()
-            .watch(migrator_factory.schema_dir(), RecursiveMode::Recursive)?;
-
         Ok(TuiApp {
             state: AppState::new(migrator_factory, message_tx)?,
-            _debouncer: debouncer,
         })
     }
 }
@@ -50,6 +33,7 @@ pub async fn run_tui(
     migrator_factory: MigratorFactory,
     message_tx: mpsc::Sender<Message>,
     message_rx: mpsc::Receiver<Message>,
+    config: ReloadableConfig<Conf>,
 ) -> Result<(), Report> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -58,7 +42,7 @@ pub async fn run_tui(
     let mut terminal = Terminal::new(backend)?;
 
     let app = TuiApp::new(migrator_factory, message_tx)?;
-    let res = run_app(&mut terminal, app, message_rx).await;
+    let res = run_app(&mut terminal, app, message_rx, config).await;
 
     disable_raw_mode()?;
     execute!(
@@ -77,6 +61,7 @@ async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     mut app: TuiApp<'static>,
     mut message_rx: mpsc::Receiver<Message>,
+    mut config: ReloadableConfig<Conf>,
 ) -> Result<(), Report> {
     let mut event_reader = EventStream::new().fuse();
     let mut log_rx = BroadcastWriter::default().receiver();
@@ -107,11 +92,16 @@ async fn run_app(
                         Message::ConfigChanged(config) => {
                             app.state.update_config(config)?;
                         }
-                        Message::SourceChanged(source) => {
-                            app.state.set_schema_dir(source)?;
+                        Message::PathChanged(previous, current) => {
+                            config.switch_path(previous.as_deref(), current.as_deref());
                         }
-                        Message::TargetChanged(path) => {
-                            app.state.set_target_path(path)?;
+                        Message::SourceChanged(previous_source, current_source) => {
+                            config.switch_path(Some(&previous_source), Some(&current_source));
+                            app.state.set_schema_dir(current_source)?;
+                        }
+                        Message::TargetChanged(previous_target, current_target) => {
+                            config.switch_path(Some(&previous_target), Some(&current_target));
+                            app.state.set_target_path(current_target)?;
                         }
                         _ => {}
                     }

@@ -24,8 +24,9 @@ pub enum Message {
     MigrationCompleted,
     FileChanged,
     ConfigChanged(Config),
-    SourceChanged(PathBuf),
-    TargetChanged(PathBuf),
+    PathChanged(Option<PathBuf>, Option<PathBuf>),
+    SourceChanged(PathBuf, PathBuf),
+    TargetChanged(PathBuf, PathBuf),
 }
 
 #[derive(Default)]
