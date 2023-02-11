@@ -221,6 +221,7 @@ impl MigrationState {
             self.show_popup = false;
             if popup_button_index == 1 {
                 self.clear_logs();
+                BroadcastWriter::enable();
                 self.log_start_time = Some(chrono::Local::now());
                 let migrator = self.migrator_factory.create_migrator(Options {
                     allow_deletions: true,
@@ -237,12 +238,14 @@ impl MigrationState {
                     if let Err(e) = migration_script_tx.blocking_send(Message::MigrationCompleted) {
                         error!("{e}");
                     }
+                    BroadcastWriter::disable();
                 });
             }
         } else {
             match self.selected {
                 0 => {
                     self.clear_logs();
+                    BroadcastWriter::enable();
                     self.log_start_time = Some(chrono::Local::now());
                     let migrator = self.migrator_factory.create_migrator(Options {
                         allow_deletions: true,
@@ -260,12 +263,13 @@ impl MigrationState {
                         {
                             error!("{e}");
                         }
+                        BroadcastWriter::disable();
                     });
                 }
                 1 => {
                     self.clear_logs();
                     self.log_start_time = Some(chrono::Local::now());
-                    BroadcastWriter::disable();
+
                     let migrator = self.migrator_factory.create_migrator(Options {
                         allow_deletions: true,
                         dry_run: true,
@@ -281,10 +285,9 @@ impl MigrationState {
                                 error!("{e}");
                             }
                         }) {
-                            BroadcastWriter::enable();
                             error!("{e}");
                         };
-                        BroadcastWriter::enable();
+
                         controls_enabled.store(true, Ordering::SeqCst);
                         if let Err(e) = migration_script_tx.blocking_send(Message::ProcessCompleted)
                         {

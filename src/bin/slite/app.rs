@@ -24,6 +24,7 @@ use std::{
 use tokio::sync::mpsc;
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::{
+    filter::Targets,
     fmt::MakeWriter,
     prelude::*,
     reload::{self, Handle},
@@ -212,7 +213,7 @@ fn regex_parser(val: &str) -> Result<SerdeRegex, regex::Error> {
 pub struct ConfigStore {
     cli_config: Conf,
     tx: mpsc::Sender<Message>,
-    reload_handle: Handle<LevelFilter, Registry>,
+    reload_handle: Handle<Targets, Registry>,
 }
 
 impl ConfigHandler<Conf> for ConfigStore {
@@ -241,11 +242,14 @@ impl ConfigHandler<Conf> for ConfigStore {
         if previous_config.log_level != new_config.log_level {
             self.reload_handle
                 .modify(|l| {
-                    *l = new_config
-                        .log_level
-                        .as_ref()
-                        .unwrap_or(&SerdeLevel(LevelFilter::INFO))
-                        .0
+                    *l = Targets::default().with_target(
+                        "slite",
+                        new_config
+                            .log_level
+                            .as_ref()
+                            .unwrap_or(&SerdeLevel(LevelFilter::INFO))
+                            .0,
+                    )
                 })
                 .unwrap();
         }
@@ -627,7 +631,10 @@ impl App {
     }
 
     async fn run_tui(self) -> Result<(), Report> {
-        let (filter, reload_handle) = reload::Layer::new(self.log_level);
+        BroadcastWriter::disable();
+
+        let (filter, reload_handle) =
+            reload::Layer::new(Targets::default().with_target("slite", self.log_level));
         Registry::default()
             .with(
                 HierarchicalLayer::default()
