@@ -1,0 +1,8 @@
+after_migration = "./post-migration"
+before_migration = "./pre-migration"
+extension_dir = "./extensions"
+source = "./schema"
+target = "./demo.db"
+#ignore =
+log_level = "debug"
+pager = false

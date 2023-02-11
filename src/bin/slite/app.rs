@@ -11,7 +11,7 @@ use rusqlite::Connection;
 use serde::{de::Visitor, Deserialize, Serialize};
 use slite::{
     error::InitializationError,
-    read_sql_files,
+    read_extension_dir, read_sql_files,
     tui::{BroadcastWriter, ConfigHandler, Message, MigratorFactory, ReloadableConfig},
     Migrator, Options, SqlPrinter,
 };
@@ -169,8 +169,8 @@ pub struct Conf {
     pub after_migration: Option<PathBuf>,
     #[arg(short, long, value_parser = destination_parser)]
     pub target: Option<PathBuf>,
-    #[arg(short, long, value_parser = extension_parser)]
-    pub extension: Option<Vec<PathBuf>>,
+    #[arg(short, long, value_parser = source_parser)]
+    pub extension_dir: Option<PathBuf>,
     #[arg(short, long, value_parser = regex_parser)]
     pub ignore: Option<SerdeRegex>,
     #[arg(short, long)]
@@ -191,7 +191,7 @@ fn source_parser(val: &str) -> Result<PathBuf, Report> {
     let path = PathBuf::from(val.to_owned());
     match path.try_exists() {
         Ok(true) => Ok(path),
-        Ok(false) => Err(color_eyre::eyre::eyre!("Source path does not exist")),
+        Ok(false) => Err(color_eyre::eyre::eyre!("Path does not exist")),
         Err(e) => Err(color_eyre::eyre::eyre!("{e}")),
     }
 }
@@ -201,16 +201,6 @@ fn destination_parser(val: &str) -> Result<PathBuf, Report> {
     match (path.try_exists(), path.is_file()) {
         (Ok(true), false) => Err(color_eyre::eyre::eyre!("Destination must be a file")),
         (Ok(_), _) => Ok(path),
-        (Err(e), _) => Err(color_eyre::eyre::eyre!("{e}")),
-    }
-}
-
-fn extension_parser(val: &str) -> Result<PathBuf, Report> {
-    let path = PathBuf::from(val.to_owned());
-    match (path.try_exists(), path.is_file()) {
-        (Ok(true), false) => Err(color_eyre::eyre::eyre!("Extension path must be a file")),
-        (Ok(true), true) => Ok(path),
-        (Ok(false), _) => Err(color_eyre::eyre::eyre!("Extension path does not exist")),
         (Err(e), _) => Err(color_eyre::eyre::eyre!("{e}")),
     }
 }
@@ -259,7 +249,7 @@ impl ConfigHandler<Conf> for ConfigStore {
                 })
                 .unwrap();
         }
-        if previous_config.extension != new_config.extension
+        if previous_config.extension_dir != new_config.extension_dir
             || previous_config.ignore != new_config.ignore
             || previous_config.before_migration != new_config.before_migration
             || previous_config.after_migration != new_config.after_migration
@@ -280,9 +270,14 @@ impl ConfigHandler<Conf> for ConfigStore {
                     ))
                     .unwrap();
             }
+
             self.tx
                 .blocking_send(Message::ConfigChanged(slite::Config {
-                    extensions: new_config.extension.clone().unwrap_or_default(),
+                    extensions: new_config
+                        .extension_dir
+                        .clone()
+                        .map(read_extension_dir)
+                        .unwrap_or_default(),
                     ignore: new_config.ignore.clone().map(|r| r.0),
                     before_migration: new_config
                         .before_migration
@@ -322,7 +317,11 @@ impl ConfigHandler<Conf> for ConfigStore {
         }) {
             self.tx
                 .blocking_send(Message::ConfigChanged(slite::Config {
-                    extensions: new_config.extension.clone().unwrap_or_default(),
+                    extensions: new_config
+                        .extension_dir
+                        .clone()
+                        .map(read_extension_dir)
+                        .unwrap_or_default(),
                     ignore: new_config.ignore.clone().map(|r| r.0),
                     before_migration: new_config
                         .before_migration
@@ -346,7 +345,7 @@ impl ConfigHandler<Conf> for ConfigStore {
             target: cli_config.target,
             before_migration: cli_config.before_migration,
             after_migration: cli_config.after_migration,
-            extension: cli_config.extension,
+            extension_dir: cli_config.extension_dir,
             ignore: cli_config.ignore,
             log_level: cli_config.log_level,
             pager: cli_config.pager,
@@ -396,7 +395,7 @@ impl App {
         let partial = confique_partial_conf::PartialConf {
             source: cli_config.source,
             target: cli_config.target,
-            extension: cli_config.extension,
+            extension_dir: cli_config.extension_dir,
             ignore: cli_config.ignore,
             log_level: cli_config.log_level,
             pager: cli_config.pager,
@@ -410,7 +409,12 @@ impl App {
 
         let source = conf.source.unwrap_or_default();
         let target = conf.target.unwrap_or_default();
-        let extensions = conf.extension.unwrap_or_default();
+
+        let extensions = conf
+            .extension_dir
+            .map(read_extension_dir)
+            .unwrap_or_default();
+
         let ignore = conf.ignore.map(|i| i.0);
         let before_migration = conf
             .before_migration

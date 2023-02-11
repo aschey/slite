@@ -1,7 +1,7 @@
 #[cfg(feature = "pretty-print")]
 mod ansi_sql_printer;
 #[cfg(feature = "pretty-print")]
-pub use ansi_sql_printer::SqlPrinter;
+pub use ansi_sql_printer::*;
 #[cfg(not(feature = "pretty-print"))]
 mod default_sql_printer;
 #[cfg(feature = "diff")]
@@ -10,6 +10,9 @@ mod diff;
 mod unified_diff_builder;
 #[cfg(feature = "diff")]
 pub use diff::*;
+#[cfg(feature = "read-files")]
+mod read_files;
+pub use read_files::*;
 mod color;
 #[cfg(feature = "tui")]
 pub mod tui;
@@ -69,46 +72,6 @@ pub struct Migrator {
     pristine: PristineConnection,
     settings: Settings,
     foreign_keys_enabled: bool,
-}
-
-#[cfg(feature = "read-files")]
-pub fn read_sql_files(sql_dir: impl AsRef<std::path::Path>) -> Vec<String> {
-    let mut paths: Vec<_> = ignore::WalkBuilder::new(sql_dir)
-        .max_depth(Some(5))
-        .filter_entry(|entry| {
-            let path = entry.path();
-            path.is_dir() || path.extension().map(|e| e == "sql").unwrap_or(false)
-        })
-        .build()
-        .filter_map(|dir_result| dir_result.ok().map(|d| d.path().to_path_buf()))
-        .collect();
-
-    paths.sort_by(|a, b| {
-        let a_seq = get_sequence(a);
-        let b_seq = get_sequence(b);
-        a_seq.cmp(&b_seq)
-    });
-    paths
-        .iter()
-        .filter(|p| p.is_file())
-        .map(|p| std::fs::read_to_string(p).unwrap())
-        .collect()
-}
-
-#[cfg(feature = "read-files")]
-fn get_sequence(path: &std::path::Path) -> i32 {
-    let path_str = path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-    let seq = path_str.split('-').next();
-    if let Some(first) = seq {
-        if let Ok(seq_num) = first.parse::<i32>() {
-            return seq_num;
-        }
-    }
-    i32::MIN
 }
 
 impl Migrator {
