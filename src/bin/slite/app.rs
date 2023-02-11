@@ -4,6 +4,7 @@ use clap_complete::{generate, Shell};
 use color_eyre::Report;
 use confique::{toml, Config};
 use minus::Pager;
+use normpath::PathExt;
 use notify_debouncer_mini::DebouncedEvent;
 use owo_colors::OwoColorize;
 use regex::Regex;
@@ -301,7 +302,12 @@ impl ConfigHandler<Conf> for ConfigStore {
             new_config
                 .source
                 .as_ref()
-                .map(|p| e.path.starts_with(p))
+                .map(|p| {
+                    e.path
+                        .normalize()
+                        .unwrap()
+                        .starts_with(p.normalize().unwrap())
+                })
                 .unwrap_or(false)
         }) {
             self.tx.blocking_send(Message::FileChanged).unwrap();
@@ -311,12 +317,22 @@ impl ConfigHandler<Conf> for ConfigStore {
             new_config
                 .before_migration
                 .as_ref()
-                .map(|p| e.path.starts_with(p))
+                .map(|p| {
+                    e.path
+                        .normalize()
+                        .unwrap()
+                        .starts_with(p.normalize().unwrap())
+                })
                 .unwrap_or(false)
                 || new_config
                     .after_migration
                     .as_ref()
-                    .map(|p| e.path.starts_with(p))
+                    .map(|p| {
+                        e.path
+                            .normalize()
+                            .unwrap()
+                            .starts_with(p.normalize().unwrap())
+                    })
                     .unwrap_or(false)
         }) {
             self.tx
