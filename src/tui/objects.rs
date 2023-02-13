@@ -1,8 +1,12 @@
+use std::collections::BTreeMap;
+
 use tui::{
     style::{Color, Modifier, Style},
     text::Text,
     widgets::{Block, List, ListItem, ListState, StatefulWidget},
 };
+
+use crate::ObjectType;
 
 #[derive(Debug, Clone)]
 pub struct Objects<'a> {
@@ -39,16 +43,17 @@ impl<'a> StatefulWidget for Objects<'a> {
 
 #[derive(Debug, Clone)]
 pub enum ListItemType {
-    Entry(String),
+    Entry(String, Color),
     Header(String),
 }
 
 impl From<ListItemType> for ListItem<'static> {
     fn from(val: ListItemType) -> Self {
         match val {
-            ListItemType::Entry(title) => {
-                ListItem::new(Text::styled("  ".to_owned() + &title, Style::default()))
-            }
+            ListItemType::Entry(title, foreground) => ListItem::new(Text::styled(
+                "  ".to_owned() + &title,
+                Style::default().fg(foreground),
+            )),
             ListItemType::Header(title) => ListItem::new(Text::styled(
                 title,
                 Style::default()
@@ -72,26 +77,67 @@ pub struct ObjectsState {
 const LIST_PADDING: usize = 5;
 const NUM_HEADERS: i32 = 4;
 
+pub struct StyledObject {
+    pub object: String,
+    pub foreground: Color,
+}
+
+pub struct StyledObjects(BTreeMap<ObjectType, Vec<StyledObject>>);
+
+impl FromIterator<(ObjectType, Vec<StyledObject>)> for StyledObjects {
+    fn from_iter<T: IntoIterator<Item = (ObjectType, Vec<StyledObject>)>>(iter: T) -> Self {
+        Self(BTreeMap::<ObjectType, Vec<StyledObject>>::from_iter(iter))
+    }
+}
+
+impl StyledObjects {
+    pub fn is_empty(&self) -> bool {
+        self.0.values().all(|v| v.is_empty())
+    }
+
+    pub fn tables(&self) -> &Vec<StyledObject> {
+        self.0.get(&ObjectType::Table).unwrap()
+    }
+
+    pub fn indexes(&self) -> &Vec<StyledObject> {
+        self.0.get(&ObjectType::Index).unwrap()
+    }
+
+    pub fn views(&self) -> &Vec<StyledObject> {
+        self.0.get(&ObjectType::View).unwrap()
+    }
+
+    pub fn triggers(&self) -> &Vec<StyledObject> {
+        self.0.get(&ObjectType::Trigger).unwrap()
+    }
+}
+
+impl From<&StyledObject> for ListItemType {
+    fn from(val: &StyledObject) -> Self {
+        ListItemType::Entry(val.object.clone(), val.foreground)
+    }
+}
+
 impl ObjectsState {
-    pub fn new(objects: crate::Objects) -> ObjectsState {
+    pub fn new(objects: StyledObjects) -> ObjectsState {
         let has_items = !objects.is_empty();
         let list_items: Vec<_> = vec![]
             .into_iter()
             .chain([ListItemType::Header("Tables".to_owned())])
-            .chain(objects.tables.into_iter().map(ListItemType::Entry))
+            .chain(objects.tables().iter().map(Into::into))
             .chain([ListItemType::Header("Indexes".to_owned())])
-            .chain(objects.indexes.into_iter().map(ListItemType::Entry))
+            .chain(objects.indexes().iter().map(Into::into))
             .chain([ListItemType::Header("Views".to_owned())])
-            .chain(objects.views.into_iter().map(ListItemType::Entry))
+            .chain(objects.views().iter().map(Into::into))
             .chain([ListItemType::Header("Triggers".to_owned())])
-            .chain(objects.triggers.into_iter().map(ListItemType::Entry))
+            .chain(objects.triggers().iter().map(Into::into))
             .collect();
 
         let max_length = list_items
             .iter()
             .map(|o| match o {
                 ListItemType::Header(header) => header.len(),
-                ListItemType::Entry(title) => title.len()
+                ListItemType::Entry(title, _) => title.len()
             }+LIST_PADDING)
             .max()
             .unwrap_or_default();
@@ -163,7 +209,7 @@ impl ObjectsState {
     pub fn selected_item(&self) -> Option<String> {
         if let Some(selected) = self.state.selected() {
             match self.objects.get(selected).expect("Item not selected") {
-                ListItemType::Entry(entry) => Some(entry.to_owned()),
+                ListItemType::Entry(entry, _) => Some(entry.to_owned()),
                 ListItemType::Header(_) => unreachable!(),
             }
         } else {
@@ -176,7 +222,7 @@ impl ObjectsState {
         for (i, object) in self.objects.iter().enumerate() {
             match object {
                 ListItemType::Header(_) => skip += 1,
-                ListItemType::Entry(val) => {
+                ListItemType::Entry(val, _) => {
                     if val == entry {
                         self.state.select(Some(i));
                         self.adjusted_index = (i - skip) as i32;

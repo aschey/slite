@@ -1,23 +1,39 @@
+use std::collections::BTreeMap;
+use std::ops::Deref;
+
 use crate::{error::QueryError, unified_diff_builder::UnifiedDiffBuilder};
-use crate::{MigrationMetadata, Migrator, SqlPrinter};
+use crate::{MigrationMetadata, Migrator, ObjectType, SqlPrinter};
 use imara_diff::{diff, intern::InternedInput, Algorithm};
 
 impl Migrator {
     pub fn diff(&mut self) -> Result<String, QueryError> {
         let metadata = self.parse_metadata()?;
 
-        let diffs = diff_objects(metadata);
+        let diffs = diff_metadata(metadata);
         Ok(diffs
+            .0
+            .values()
             .into_iter()
+            .flat_map(|d| d.values())
             .filter_map(|d| {
                 if d.diff_text.is_empty() {
                     None
                 } else {
-                    Some(d.diff_text)
+                    Some(d.diff_text.clone())
                 }
             })
             .collect::<Vec<_>>()
             .join("\n"))
+    }
+}
+
+pub struct SchemaDiff(BTreeMap<ObjectType, BTreeMap<String, Diff>>);
+
+impl Deref for SchemaDiff {
+    type Target = BTreeMap<ObjectType, BTreeMap<String, Diff>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -26,36 +42,43 @@ pub struct Diff {
     pub original_text: String,
 }
 
-pub fn diff_objects(metadata: MigrationMetadata) -> Vec<Diff> {
-    let objects = metadata.clone().into_objects();
-    objects
-        .tables
+pub fn diff_metadata(metadata: MigrationMetadata) -> SchemaDiff {
+    let mut map = BTreeMap::<ObjectType, BTreeMap<String, Diff>>::default();
+    map.insert(ObjectType::Table, Default::default());
+    map.insert(ObjectType::Index, Default::default());
+    map.insert(ObjectType::View, Default::default());
+    map.insert(ObjectType::Trigger, Default::default());
+    let diffs = metadata
+        .unified_objects()
         .iter()
-        .map(|t| {
-            sql_diff(
-                &metadata.source.tables.get(t).cloned().unwrap_or_default(),
-                &metadata.target.tables.get(t).cloned().unwrap_or_default(),
+        .map(|o| {
+            (
+                o,
+                diff_objects(
+                    &o.name,
+                    metadata.source.get(&o.object_type),
+                    metadata.target.get(&o.object_type),
+                ),
             )
         })
-        .chain(objects.indexes.iter().map(|t| {
-            sql_diff(
-                &metadata.source.indexes.get(t).cloned().unwrap_or_default(),
-                &metadata.target.indexes.get(t).cloned().unwrap_or_default(),
-            )
-        }))
-        .chain(objects.views.iter().map(|t| {
-            sql_diff(
-                &metadata.source.views.get(t).cloned().unwrap_or_default(),
-                &metadata.target.views.get(t).cloned().unwrap_or_default(),
-            )
-        }))
-        .chain(objects.triggers.iter().map(|t| {
-            sql_diff(
-                &metadata.source.triggers.get(t).cloned().unwrap_or_default(),
-                &metadata.target.triggers.get(t).cloned().unwrap_or_default(),
-            )
-        }))
-        .collect()
+        .fold(map, |mut acc, (object, diff)| {
+            acc.get_mut(&object.object_type)
+                .unwrap()
+                .insert(object.name.clone(), diff);
+            acc
+        });
+    SchemaDiff(diffs)
+}
+
+fn diff_objects(
+    name: &str,
+    source: &BTreeMap<String, String>,
+    target: &BTreeMap<String, String>,
+) -> Diff {
+    sql_diff(
+        source.get(name).map(|s| s.as_str()).unwrap_or_default(),
+        target.get(name).map(|s| s.as_str()).unwrap_or_default(),
+    )
 }
 
 pub fn sql_diff(source: &str, target: &str) -> Diff {

@@ -8,6 +8,10 @@ use arc_swap::ArcSwap;
 use confique::Config;
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
+use tokio::sync::mpsc;
+use tracing::error;
+
+use super::Message;
 
 pub trait ConfigHandler<T: Config + Send + Sync + 'static>: Send + 'static {
     fn on_update(
@@ -15,7 +19,7 @@ pub trait ConfigHandler<T: Config + Send + Sync + 'static>: Send + 'static {
         previous_config: Arc<T>,
         new_config: Arc<T>,
         events: Vec<DebouncedEvent>,
-    );
+    ) -> Result<(), mpsc::error::SendError<Message>>;
     fn create_config(&self, path: &Path) -> T;
     fn watch_paths(&self, path: &Path) -> Vec<PathBuf>;
 }
@@ -38,7 +42,9 @@ impl<T: Config + Send + Sync + 'static> ReloadableConfig<T> {
                 let new_config = Arc::new(handler.create_config(&path));
                 let previous_config = current_config_.load_full();
                 current_config_.store(new_config.clone());
-                handler.on_update(previous_config, new_config, events);
+                if let Err(e) = handler.on_update(previous_config, new_config, events) {
+                    error!("{e}");
+                }
             }
         })
         .unwrap();

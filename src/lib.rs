@@ -19,6 +19,8 @@ pub mod tui;
 pub use color::*;
 mod connection;
 pub use connection::*;
+mod metadata;
+pub use metadata::*;
 pub mod error;
 
 use crate::connection::TargetTransaction;
@@ -29,6 +31,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use rusqlite::Connection;
 use std::{
+    cmp::Ordering,
     collections::{BTreeMap, HashMap},
     fmt::Debug,
     path::PathBuf,
@@ -198,53 +201,45 @@ impl Migrator {
         })?;
 
         self.migrate_tables(tx, &pristine_metadata)?;
-        let indexes = &tx
-            .parse_metadata()
-            .map_err(|e| {
-                MigrationError::QueryFailure(
-                    "Failed to get metadata from current database".to_owned(),
-                    e,
-                )
-            })?
-            .indexes;
+
+        let metadata = tx.parse_metadata().map_err(|e| {
+            MigrationError::QueryFailure(
+                "Failed to get metadata from current database".to_owned(),
+                e,
+            )
+        })?;
 
         {
             let object_span = span!(Level::INFO, "Migrating indexes");
             let _object_guard = object_span.entered();
-            self.migrate_objects(tx, indexes, &pristine_metadata.indexes, "index", "indexes")?;
+            self.migrate_objects(
+                tx,
+                metadata.indexes(),
+                pristine_metadata.indexes(),
+                "index",
+                "indexes",
+            )?;
         }
 
-        let views = &tx
-            .parse_metadata()
-            .map_err(|e| {
-                MigrationError::QueryFailure(
-                    "Failed to get metadata from current database".to_owned(),
-                    e,
-                )
-            })?
-            .views;
         {
             let object_span = span!(Level::INFO, "Migrating views");
             let _object_guard = object_span.entered();
-            self.migrate_objects(tx, views, &pristine_metadata.views, "view", "views")?;
+            self.migrate_objects(
+                tx,
+                metadata.views(),
+                pristine_metadata.views(),
+                "view",
+                "views",
+            )?;
         }
 
-        let triggers = &tx
-            .parse_metadata()
-            .map_err(|e| {
-                MigrationError::QueryFailure(
-                    "Failed to get metadata from current database".to_owned(),
-                    e,
-                )
-            })?
-            .triggers;
         {
             let object_span = span!(Level::INFO, "Migrating triggers");
             let _object_guard = object_span.entered();
             self.migrate_objects(
                 tx,
-                triggers,
-                &pristine_metadata.triggers,
+                metadata.triggers(),
+                pristine_metadata.triggers(),
                 "trigger",
                 "triggers",
             )?;
@@ -322,9 +317,9 @@ impl Migrator {
         let _create_table_guard = create_table_span.entered();
 
         let new_tables: HashMap<&String, &String> = pristine_metadata
-            .tables
+            .tables()
             .iter()
-            .filter(|(k, _)| !metadata.tables.contains_key(*k))
+            .filter(|(k, _)| !metadata.tables().contains_key(*k))
             .collect();
 
         if new_tables.is_empty() {
@@ -352,9 +347,9 @@ impl Migrator {
         let _drop_table_guard = drop_table_span.entered();
 
         let removed_tables: Vec<&String> = metadata
-            .tables
+            .tables()
             .keys()
-            .filter(|k| !pristine_metadata.tables.contains_key(*k))
+            .filter(|k| !pristine_metadata.tables().contains_key(*k))
             .collect();
 
         if !removed_tables.is_empty() && !self.settings.options.allow_deletions {
@@ -394,10 +389,10 @@ impl Migrator {
         let _modify_table_guard = modify_table_span.entered();
 
         let modified_tables: HashMap<&String, &String> = pristine_metadata
-            .tables
+            .tables()
             .iter()
             .filter(|(name, sql)| {
-                if let Some(existing) = metadata.tables.get(*name) {
+                if let Some(existing) = metadata.tables().get(*name) {
                     normalize_sql(existing) != normalize_sql(sql)
                 } else {
                     false
@@ -578,52 +573,83 @@ pub struct MigrationMetadata {
 }
 
 impl MigrationMetadata {
-    pub fn into_objects(self) -> Objects {
-        let source_objects = self.source.into_objects();
-        let target_objects = self.target.into_objects();
-        source_objects.merge(target_objects)
+    pub fn unified_objects(&self) -> Vec<Object> {
+        self.source.unified_objects(&self.target)
     }
 }
 
-pub struct Objects {
-    pub tables: Vec<String>,
-    pub indexes: Vec<String>,
-    pub views: Vec<String>,
-    pub triggers: Vec<String>,
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Object {
+    pub name: String,
+    pub object_type: ObjectType,
+    pub sql: String,
 }
+
+impl PartialOrd for Object {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.object_type.partial_cmp(&other.object_type) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.name.partial_cmp(&other.name)
+    }
+}
+
+impl Ord for Object {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+    }
+}
+
+pub struct Objects(HashMap<ObjectType, Vec<String>>);
 
 impl Objects {
-    pub fn merge(self, other: Self) -> Self {
-        Self {
-            tables: sorted_merge(self.tables, other.tables),
-            indexes: sorted_merge(self.indexes, other.indexes),
-            views: sorted_merge(self.views, other.views),
-            triggers: sorted_merge(self.triggers, other.triggers),
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.tables.is_empty()
-            && self.indexes.is_empty()
-            && self.views.is_empty()
-            && self.triggers.is_empty()
-    }
-
-    pub fn all(&self) -> Vec<&String> {
-        self.tables
-            .iter()
-            .chain(self.indexes.iter())
-            .chain(self.views.iter())
-            .chain(self.triggers.iter())
-            .collect()
+    pub fn merge(mut self, other: Self) -> Self {
+        self.0.insert(
+            ObjectType::Table,
+            sorted_merge(
+                self.0.get(&ObjectType::Table).unwrap(),
+                other.0.get(&ObjectType::Table).unwrap(),
+            ),
+        );
+        self.0.insert(
+            ObjectType::Index,
+            sorted_merge(
+                self.0.get(&ObjectType::Index).unwrap(),
+                other.0.get(&ObjectType::Index).unwrap(),
+            ),
+        );
+        self.0.insert(
+            ObjectType::View,
+            sorted_merge(
+                self.0.get(&ObjectType::View).unwrap(),
+                other.0.get(&ObjectType::View).unwrap(),
+            ),
+        );
+        self.0.insert(
+            ObjectType::Trigger,
+            sorted_merge(
+                self.0.get(&ObjectType::Trigger).unwrap(),
+                other.0.get(&ObjectType::Trigger).unwrap(),
+            ),
+        );
+        self
     }
 }
 
-fn sorted_merge(a: Vec<String>, b: Vec<String>) -> Vec<String> {
-    let mut merged: Vec<_> = a.into_iter().chain(b.into_iter()).collect();
+fn sorted_merge(a: &[String], b: &[String]) -> Vec<String> {
+    let mut merged: Vec<_> = a.iter().chain(b.iter()).map(|m| m.to_owned()).collect();
     merged.sort();
     merged.dedup();
     merged
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Debug)]
+pub enum ObjectType {
+    Table,
+    Index,
+    View,
+    Trigger,
 }
 
 fn normalize_sql(sql: &str) -> String {

@@ -97,6 +97,10 @@ where
         before: Range<u32>,
         after: Range<u32>,
     ) -> Result<(), std::fmt::Error> {
+        if self.pos == 0 && before.start > 0 {
+            // If the first diff comes before the start of the text, print the text before the diff
+            self.print_tokens(&self.before[0..before.start as usize], DiffType::None)?;
+        }
         if before.start - self.pos > 6 {
             self.flush()?;
             self.pos = before.start - 3;
@@ -125,6 +129,14 @@ where
 
         let end = (self.pos + 3).min(self.before.len() as u32);
         self.update_pos(end, end)?;
+
+        if self.pos < self.before.len() as u32 {
+            // Print trailing text after the diff, if there is any
+            self.print_tokens(
+                &self.before[self.pos as usize..self.before.len()],
+                DiffType::None,
+            )?;
+        }
 
         let header = format!(
             "@@ -{},{} +{},{} @@",

@@ -21,6 +21,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
     str::FromStr,
+    sync::Arc,
 };
 use tokio::sync::mpsc;
 use tracing::metadata::LevelFilter;
@@ -181,6 +182,15 @@ pub struct Conf {
     pub pager: Option<bool>,
 }
 
+impl Conf {
+    fn migrator_config_changed(&self, other: &Self) -> bool {
+        self.extension_dir != other.extension_dir
+            || self.ignore != other.ignore
+            || self.before_migration != other.before_migration
+            || self.after_migration != other.after_migration
+    }
+}
+
 #[derive(clap::Parser)]
 struct Cli {
     #[command(subcommand)]
@@ -220,142 +230,57 @@ pub struct ConfigStore {
 impl ConfigHandler<Conf> for ConfigStore {
     fn on_update(
         &mut self,
-        previous_config: std::sync::Arc<Conf>,
-        new_config: std::sync::Arc<Conf>,
+        previous_config: Arc<Conf>,
+        new_config: Arc<Conf>,
         events: Vec<DebouncedEvent>,
-    ) {
+    ) -> Result<(), mpsc::error::SendError<Message>> {
         if previous_config.source != new_config.source {
-            self.tx
-                .blocking_send(Message::SourceChanged(
-                    previous_config.source.clone().unwrap_or_default(),
-                    new_config.source.clone().unwrap_or_default(),
-                ))
-                .unwrap();
+            self.tx.blocking_send(Message::SourceChanged(
+                previous_config.source.clone().unwrap_or_default(),
+                new_config.source.clone().unwrap_or_default(),
+            ))?;
         }
+
         if previous_config.target != new_config.target {
-            self.tx
-                .blocking_send(Message::TargetChanged(
-                    previous_config.target.clone().unwrap_or_default(),
-                    new_config.target.clone().unwrap_or_default(),
-                ))
-                .unwrap();
+            self.tx.blocking_send(Message::TargetChanged(
+                previous_config.target.clone().unwrap_or_default(),
+                new_config.target.clone().unwrap_or_default(),
+            ))?;
         }
+
         if previous_config.log_level != new_config.log_level {
-            self.reload_handle
-                .modify(|l| {
-                    *l = Targets::default().with_target(
-                        "slite",
-                        new_config
-                            .log_level
-                            .as_ref()
-                            .unwrap_or(&SerdeLevel(LevelFilter::INFO))
-                            .0,
-                    )
-                })
-                .unwrap();
+            self.update_log_level(&new_config.log_level);
         }
-        if previous_config.extension_dir != new_config.extension_dir
-            || previous_config.ignore != new_config.ignore
-            || previous_config.before_migration != new_config.before_migration
-            || previous_config.after_migration != new_config.after_migration
+
+        if previous_config.before_migration != new_config.before_migration {
+            self.tx.blocking_send(Message::PathChanged(
+                previous_config.before_migration.clone(),
+                new_config.before_migration.clone(),
+            ))?;
+        }
+
+        if previous_config.after_migration != new_config.after_migration {
+            self.tx.blocking_send(Message::PathChanged(
+                previous_config.after_migration.clone(),
+                new_config.after_migration.clone(),
+            ))?;
+        }
+
+        if previous_config.migrator_config_changed(&new_config) {
+            self.send_config_changed(&new_config)?;
+        }
+
+        if self.contains_path(&events, &new_config.source) {
+            self.tx.blocking_send(Message::FileChanged)?;
+        }
+
+        if self.contains_path(&events, &new_config.before_migration)
+            || self.contains_path(&events, &new_config.after_migration)
         {
-            if previous_config.before_migration != new_config.before_migration {
-                self.tx
-                    .blocking_send(Message::PathChanged(
-                        previous_config.before_migration.clone(),
-                        new_config.before_migration.clone(),
-                    ))
-                    .unwrap();
-            }
-            if previous_config.after_migration != new_config.after_migration {
-                self.tx
-                    .blocking_send(Message::PathChanged(
-                        previous_config.after_migration.clone(),
-                        new_config.after_migration.clone(),
-                    ))
-                    .unwrap();
-            }
-
-            self.tx
-                .blocking_send(Message::ConfigChanged(slite::Config {
-                    extensions: new_config
-                        .extension_dir
-                        .clone()
-                        .map(read_extension_dir)
-                        .unwrap_or_default(),
-                    ignore: new_config.ignore.clone().map(|r| r.0),
-                    before_migration: new_config
-                        .before_migration
-                        .clone()
-                        .map(read_sql_files)
-                        .unwrap_or_default(),
-                    after_migration: new_config
-                        .after_migration
-                        .clone()
-                        .map(read_sql_files)
-                        .unwrap_or_default(),
-                }))
-                .unwrap();
+            self.send_config_changed(&new_config)?;
         }
 
-        if events.iter().any(|e| {
-            new_config
-                .source
-                .as_ref()
-                .map(|p| {
-                    e.path
-                        .normalize()
-                        .unwrap()
-                        .starts_with(p.normalize().unwrap())
-                })
-                .unwrap_or(false)
-        }) {
-            self.tx.blocking_send(Message::FileChanged).unwrap();
-        }
-
-        if events.iter().any(|e| {
-            new_config
-                .before_migration
-                .as_ref()
-                .map(|p| {
-                    e.path
-                        .normalize()
-                        .unwrap()
-                        .starts_with(p.normalize().unwrap())
-                })
-                .unwrap_or(false)
-                || new_config
-                    .after_migration
-                    .as_ref()
-                    .map(|p| {
-                        e.path
-                            .normalize()
-                            .unwrap()
-                            .starts_with(p.normalize().unwrap())
-                    })
-                    .unwrap_or(false)
-        }) {
-            self.tx
-                .blocking_send(Message::ConfigChanged(slite::Config {
-                    extensions: new_config
-                        .extension_dir
-                        .clone()
-                        .map(read_extension_dir)
-                        .unwrap_or_default(),
-                    ignore: new_config.ignore.clone().map(|r| r.0),
-                    before_migration: new_config
-                        .before_migration
-                        .clone()
-                        .map(read_sql_files)
-                        .unwrap_or_default(),
-                    after_migration: new_config
-                        .after_migration
-                        .clone()
-                        .map(read_sql_files)
-                        .unwrap_or_default(),
-                }))
-                .unwrap();
-        }
+        Ok(())
     }
 
     fn create_config(&self, path: &Path) -> Conf {
@@ -390,6 +315,60 @@ impl ConfigHandler<Conf> for ConfigStore {
             paths.push(after);
         }
         paths
+    }
+}
+
+impl ConfigStore {
+    fn contains_path(&self, events: &[DebouncedEvent], search: &Option<PathBuf>) -> bool {
+        events.iter().any(|e| {
+            search
+                .as_ref()
+                .map(|p| {
+                    e.path
+                        .normalize()
+                        .unwrap()
+                        .starts_with(p.normalize().unwrap())
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    fn send_config_changed(
+        &self,
+        new_config: &Arc<Conf>,
+    ) -> Result<(), mpsc::error::SendError<Message>> {
+        self.tx.blocking_send(Message::ConfigChanged(slite::Config {
+            extensions: new_config
+                .extension_dir
+                .clone()
+                .map(read_extension_dir)
+                .unwrap_or_default(),
+            ignore: new_config.ignore.clone().map(|r| r.0),
+            before_migration: new_config
+                .before_migration
+                .clone()
+                .map(read_sql_files)
+                .unwrap_or_default(),
+            after_migration: new_config
+                .after_migration
+                .clone()
+                .map(read_sql_files)
+                .unwrap_or_default(),
+        }))
+    }
+
+    fn update_log_level(&self, log_level: &Option<SerdeLevel>) {
+        self.reload_handle
+            .modify(|l| {
+                *l = Targets::default().with_target(
+                    "slite",
+                    log_level
+                        .as_ref()
+                        .unwrap_or(&SerdeLevel(LevelFilter::INFO))
+                        .0,
+                )
+            })
+            .unwrap();
     }
 }
 
@@ -616,15 +595,10 @@ impl App {
             SchemaType::Source => metadata.source,
             SchemaType::Target => metadata.target,
         };
-        for (_, sql) in source.tables {
-            self.write(&sql_printer.print(&sql))?;
+        for object in source.all_objects() {
+            self.write(&sql_printer.print(&object.sql))?;
         }
-        for (_, sql) in source.indexes {
-            self.write(&sql_printer.print(&sql))?;
-        }
-        for (_, sql) in source.triggers {
-            self.write(&sql_printer.print(&sql))?;
-        }
+
         Ok(())
     }
 

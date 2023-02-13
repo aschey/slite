@@ -1,8 +1,12 @@
-use super::{panel, BiPanel, BiPanelState, Objects, ObjectsState, Scrollable, ScrollableState};
-use crate::{diff_objects, error::SqlFormatError, Metadata, MigrationMetadata, SqlPrinter};
+use super::{
+    panel, BiPanel, BiPanelState, Objects, ObjectsState, Scrollable, ScrollableState, StyledObject,
+    StyledObjects,
+};
+use crate::{diff_metadata, error::SqlFormatError, Metadata, MigrationMetadata, SqlPrinter};
 use ansi_to_tui::IntoText;
 use tui::{
     layout::{Constraint, Direction, Layout},
+    style::Color,
     text::Text,
     widgets::{Paragraph, StatefulWidget, Wrap},
 };
@@ -65,44 +69,81 @@ pub struct SqlState {
 
 impl SqlState {
     pub fn diff(schemas: MigrationMetadata) -> Result<Self, SqlFormatError> {
-        let objects = schemas.clone().into_objects();
+        let diffs = diff_metadata(schemas);
 
-        let list_items: Result<Vec<_>, _> = diff_objects(schemas)
-            .into_iter()
-            .map(|diff| {
-                let text = if diff.diff_text.is_empty() {
-                    diff.original_text
-                } else {
-                    diff.diff_text
-                };
-                text.into_text()
-                    .map_err(|e| SqlFormatError::TextFormattingFailure(text, e))
+        let objects = diffs.iter().map(|(object_type, objects)| {
+            (
+                object_type.to_owned(),
+                objects
+                    .iter()
+                    .map(|(name, diff)| {
+                        if diff.diff_text.is_empty() {
+                            StyledObject {
+                                object: name.to_owned(),
+                                foreground: Color::Reset,
+                            }
+                        } else {
+                            StyledObject {
+                                object: name.to_owned(),
+                                foreground: Color::Yellow,
+                            }
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        });
+
+        let styled = StyledObjects::from_iter(objects);
+
+        let list_items: Result<Vec<_>, _> = diffs
+            .iter()
+            .flat_map(|(_, objects)| {
+                objects.iter().map(|(_, diff)| {
+                    let text = if diff.diff_text.is_empty() {
+                        diff.original_text.to_owned()
+                    } else {
+                        diff.diff_text.to_owned()
+                    };
+                    text.into_text()
+                        .map_err(|e| SqlFormatError::TextFormattingFailure(text, e))
+                })
             })
             .collect();
 
-        let state = ObjectsState::new(objects);
+        let state = ObjectsState::new(styled);
 
         Ok(Self::new(list_items?, state))
     }
 
     pub fn schema(schema: Metadata) -> Result<Self, SqlFormatError> {
-        let mut printer = SqlPrinter::default();
+        let objects = schema.iter().map(|(object_type, objects)| {
+            (
+                object_type.to_owned(),
+                objects
+                    .iter()
+                    .map(|(name, _)| StyledObject {
+                        object: name.to_owned(),
+                        foreground: Color::Reset,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        });
+        let styled = StyledObjects::from_iter(objects);
+        let state = ObjectsState::new(styled);
 
         let list_items: Result<Vec<_>, _> = schema
-            .tables
-            .values()
-            .chain(schema.indexes.values())
-            .chain(schema.views.values())
-            .chain(schema.triggers.values())
-            .map(|v| {
-                printer
-                    .print(v)
-                    .into_text()
-                    .map_err(|e| SqlFormatError::TextFormattingFailure(v.to_owned(), e))
+            .iter()
+            .flat_map(|(_, objects)| {
+                let mut printer = SqlPrinter::default();
+                objects.values().map(move |text| {
+                    printer
+                        .print(text)
+                        .into_text()
+                        .map_err(|e| SqlFormatError::TextFormattingFailure(text.to_owned(), e))
+                })
             })
             .collect();
 
-        let state = ObjectsState::new(schema.into_objects());
         Ok(Self::new(list_items?, state))
     }
 

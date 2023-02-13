@@ -1,12 +1,10 @@
-use std::{collections::BTreeMap, fmt::Display, path::PathBuf};
-
-use regex::Regex;
 use rusqlite::{
     types::FromSql, Connection, LoadExtensionGuard, Params, Row, Transaction, TransactionBehavior,
 };
+use std::{fmt::Display, path::PathBuf};
 use tracing::{debug, span, trace, warn, Level};
 
-use crate::{InitializationError, MigrationError, Objects, QueryError, Settings, SqlPrinter};
+use crate::{InitializationError, Metadata, MigrationError, QueryError, Settings, SqlPrinter};
 
 macro_rules! event {
     ($level:expr, $($args:tt)*) => {{
@@ -70,7 +68,7 @@ impl PristineConnection {
     }
 
     pub fn parse_metadata(&mut self) -> Result<Metadata, QueryError> {
-        parse_metadata(
+        Metadata::parse(
             &self.connection,
             Level::TRACE,
             "Executing query against reference database",
@@ -166,7 +164,7 @@ where
     }
 
     pub fn parse_metadata(&mut self) -> Result<Metadata, QueryError> {
-        parse_metadata(
+        Metadata::parse(
             &self.transaction,
             Level::DEBUG,
             "",
@@ -271,7 +269,7 @@ impl TargetConnection {
     }
 
     pub fn parse_metadata(&mut self) -> Result<Metadata, QueryError> {
-        parse_metadata(
+        Metadata::parse(
             &self.connection,
             Level::DEBUG,
             "",
@@ -353,7 +351,7 @@ fn get_pragma<T: FromSql>(
     )
 }
 
-fn query<T, F>(
+pub(crate) fn query<T, F>(
     connection: &Connection,
     sql: &str,
     log_level: Level,
@@ -392,96 +390,6 @@ where
         .into_iter()
         .next()
         .expect("Query should contain one value"))
-}
-
-fn select_metadata(
-    connection: &Connection,
-    sql: &str,
-    log_level: Level,
-    msg: &str,
-    ignore: &Option<Regex>,
-    sql_printer: &mut SqlPrinter,
-) -> Result<BTreeMap<String, String>, QueryError> {
-    let results =
-        query::<(String, String), _>(connection, sql, log_level, msg, sql_printer, |row| {
-            Ok((row.get(0)?, row.get::<_, String>(1)?))
-        })?
-        .into_iter()
-        .filter(|(key, _)| !ignore.as_ref().map(|i| i.is_match(key)).unwrap_or(false));
-    Ok(BTreeMap::from_iter(results))
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct Metadata {
-    pub tables: BTreeMap<String, String>,
-    pub indexes: BTreeMap<String, String>,
-    pub triggers: BTreeMap<String, String>,
-    pub views: BTreeMap<String, String>,
-}
-
-impl Metadata {
-    pub fn into_objects(self) -> Objects {
-        Objects {
-            tables: self.tables.into_keys().collect(),
-            indexes: self.indexes.into_keys().collect(),
-            views: self.views.into_keys().collect(),
-            triggers: self.triggers.into_keys().collect(),
-        }
-    }
-}
-
-fn parse_metadata(
-    connection: &Connection,
-    log_level: Level,
-    msg: &str,
-    ignore: &Option<Regex>,
-    sql_printer: &mut SqlPrinter,
-) -> Result<Metadata, QueryError> {
-    let metadata_sql = |name: &str| {
-        format!("SELECT name, sql from sqlite_master WHERE type = '{name}' and name != 'sqlite_sequence' AND sql IS NOT NULL ORDER BY name")
-    };
-
-    let tables = select_metadata(
-        connection,
-        &metadata_sql("table"),
-        log_level,
-        msg,
-        ignore,
-        sql_printer,
-    )?;
-
-    let indexes = select_metadata(
-        connection,
-        &metadata_sql("index"),
-        log_level,
-        msg,
-        ignore,
-        sql_printer,
-    )?;
-
-    let triggers = select_metadata(
-        connection,
-        &metadata_sql("trigger"),
-        log_level,
-        msg,
-        ignore,
-        sql_printer,
-    )?;
-
-    let views = select_metadata(
-        connection,
-        &metadata_sql("view"),
-        log_level,
-        msg,
-        ignore,
-        sql_printer,
-    )?;
-    Ok(Metadata {
-        tables,
-        indexes,
-        triggers,
-        views,
-    })
 }
 
 fn get_cols(
