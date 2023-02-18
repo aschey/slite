@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io, path::PathBuf};
 
 #[derive(thiserror::Error, Debug)]
 pub enum InitializationError {
@@ -40,6 +40,8 @@ pub enum RefreshError {
     SqlFormatFailure(#[source] SqlFormatError),
     #[error("{0}")]
     InitializationFailure(#[source] InitializationError),
+    #[error("{0}")]
+    IoFailure(#[source] io::Error),
 }
 
 #[derive(thiserror::Error, Debug)]

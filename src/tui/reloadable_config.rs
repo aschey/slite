@@ -11,7 +11,7 @@ use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
 use tokio::sync::mpsc;
 use tracing::error;
 
-use super::Message;
+use super::AppMessage;
 
 pub trait ConfigHandler<T: Config + Send + Sync + 'static>: Send + 'static {
     fn on_update(
@@ -19,7 +19,7 @@ pub trait ConfigHandler<T: Config + Send + Sync + 'static>: Send + 'static {
         previous_config: Arc<T>,
         new_config: Arc<T>,
         events: Vec<DebouncedEvent>,
-    ) -> Result<(), mpsc::error::SendError<Message>>;
+    ) -> Result<(), mpsc::error::SendError<tui_elm::Message>>;
     fn create_config(&self, path: &Path) -> T;
     fn watch_paths(&self, path: &Path) -> Vec<PathBuf>;
 }

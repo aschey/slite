@@ -3,33 +3,33 @@ use crate::{
     error::{InitializationError, RefreshError, SqlFormatError},
     Config,
 };
-use std::{marker::PhantomData, path::PathBuf};
+use std::{io::Stdout, marker::PhantomData, path::PathBuf, sync::Arc};
 use tokio::sync::mpsc;
 use tui::{
+    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
     widgets::{Block, BorderType, Borders, StatefulWidget, Tabs, Widget},
+    Terminal,
 };
+use tui_elm::{Command, Model, OptionalCommand};
 
+#[derive(PartialEq, Eq)]
 pub enum ControlFlow {
     Quit,
     Continue,
 }
 
 #[derive(Clone, Debug)]
-pub enum Message {
-    Log(String),
+pub enum AppMessage {
     ProcessCompleted,
     MigrationCompleted,
     FileChanged,
     ConfigChanged(Config),
-    PathChanged(Option<PathBuf>, Option<PathBuf>),
-    SourceChanged(PathBuf, PathBuf),
-    TargetChanged(PathBuf, PathBuf),
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct App<'a> {
     phantom: PhantomData<&'a ()>,
 }
@@ -98,6 +98,7 @@ impl<'a> StatefulWidget for App<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct AppState<'a> {
     pub titles: Vec<&'a str>,
     pub index: i32,
@@ -108,10 +109,7 @@ pub struct AppState<'a> {
 }
 
 impl<'a> AppState<'a> {
-    pub fn new(
-        migrator_factory: MigratorFactory,
-        message_tx: mpsc::Sender<Message>,
-    ) -> Result<AppState<'a>, SqlFormatError> {
+    pub fn new(migrator_factory: MigratorFactory) -> Result<AppState<'a>, SqlFormatError> {
         let schema = migrator_factory.metadata();
         Ok(AppState {
             titles: vec!["Source", "Target", "Diff", "Migrate"],
@@ -119,7 +117,7 @@ impl<'a> AppState<'a> {
             source_schema: SqlState::schema(schema.source.clone())?,
             target_schema: SqlState::schema(schema.target.clone())?,
             diff_schema: SqlState::diff(schema.clone())?,
-            migration: MigrationState::new(migrator_factory, message_tx),
+            migration: MigrationState::new(migrator_factory),
         })
     }
 
@@ -180,7 +178,7 @@ impl<'a> AppState<'a> {
     #[cfg(feature = "crossterm-events")]
     pub fn handle_event(
         &mut self,
-        event: crossterm::event::Event,
+        event: &crossterm::event::Event,
     ) -> Result<ControlFlow, InitializationError> {
         use crossterm::event::{Event, KeyCode, KeyEventKind};
 
@@ -193,19 +191,19 @@ impl<'a> AppState<'a> {
                     (KeyCode::Down, 0) => self.source_schema.next(),
                     (KeyCode::Down, 1) => self.target_schema.next(),
                     (KeyCode::Down, 2) => self.diff_schema.next(),
-                    (KeyCode::Down, 3) => self.migration.next(),
+                    //  (KeyCode::Down, 3) => self.migration.next(),
                     (KeyCode::Up, 0) => self.source_schema.previous(),
                     (KeyCode::Up, 1) => self.target_schema.previous(),
                     (KeyCode::Up, 2) => self.diff_schema.previous(),
-                    (KeyCode::Up, 3) => self.migration.previous(),
+                    //(KeyCode::Up, 3) => self.migration.previous(),
                     (KeyCode::Left | KeyCode::Right, 0) => self.source_schema.toggle_focus(),
                     (KeyCode::Left | KeyCode::Right, 1) => self.target_schema.toggle_focus(),
                     (KeyCode::Left | KeyCode::Right, 2) => self.diff_schema.toggle_focus(),
-                    (KeyCode::Left | KeyCode::Right, 3) if self.migration.popup_active() => {
-                        self.migration.toggle_popup_confirm()
-                    }
-                    (KeyCode::Left | KeyCode::Right, 3) => self.migration.toggle_focus(),
-                    (KeyCode::Enter, 3) => self.migration.execute()?,
+                    // (KeyCode::Left | KeyCode::Right, 3) if self.migration.popup_active() => {
+                    //     self.migration.toggle_popup_confirm()
+                    // }
+                    //     (KeyCode::Left | KeyCode::Right, 3) => self.migration.toggle_focus(),
+                    // (KeyCode::Enter, 3) => self.migration.execute()?,
                     _ => {}
                 }
             }
@@ -214,7 +212,70 @@ impl<'a> AppState<'a> {
         Ok(ControlFlow::Continue)
     }
 
-    pub fn add_log(&mut self, log: String) -> Result<(), SqlFormatError> {
-        self.migration.add_log(log)
+    // pub fn add_log(&mut self, log: String) -> Result<(), SqlFormatError> {
+    //     self.migration.add_log(log)
+    // }
+}
+
+impl<'a> Model for AppState<'a> {
+    type Writer = Terminal<CrosstermBackend<Stdout>>;
+
+    type Error = RefreshError;
+
+    fn init(&self) -> Result<OptionalCommand, Self::Error> {
+        Ok(None)
+    }
+
+    fn update(&mut self, msg: Arc<tui_elm::Message>) -> Result<OptionalCommand, Self::Error> {
+        if self.index == 3 {
+            self.migration.update(msg.clone()).unwrap();
+        }
+        match msg.as_ref() {
+            tui_elm::Message::TermEvent(e) => {
+                let control_flow = self
+                    .handle_event(e)
+                    .map_err(RefreshError::InitializationFailure)?;
+                if control_flow == ControlFlow::Quit {
+                    return Ok(Some(Command::quit()));
+                }
+            }
+            tui_elm::Message::Custom(msg) => {
+                if let Some(msg) = msg.downcast_ref::<AppMessage>() {
+                    match msg {
+                        // AppMessage::Log(log) => {
+                        //     self.add_log(format!("{log}\n"))
+                        //         .map_err(RefreshError::SqlFormatFailure)?;
+                        // }
+                        AppMessage::FileChanged | AppMessage::MigrationCompleted => {
+                            self.refresh()?;
+                        }
+                        AppMessage::ConfigChanged(config) => {
+                            self.update_config(config.clone())?;
+                        }
+                        // AppMessage::PathChanged(previous, current) => {
+                        //     config.switch_path(previous.as_deref(), current.as_deref());
+                        // }
+                        // AppMessage::SourceChanged(previous_source, current_source) => {
+                        //     config.switch_path(Some(&previous_source), Some(&current_source));
+                        //     app.state.set_schema_dir(current_source)?;
+                        // }
+                        // AppMessage::TargetChanged(previous_target, current_target) => {
+                        //     config.switch_path(Some(&previous_target), Some(&current_target));
+                        //     app.state.set_target_path(current_target)?;
+                        // }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        };
+        Ok(None)
+    }
+
+    fn view(&self, writer: &mut Self::Writer) -> Result<(), Self::Error> {
+        writer
+            .draw(|f| f.render_stateful_widget(App::default(), f.size(), &mut self.clone()))
+            .map_err(RefreshError::IoFailure)?;
+        Ok(())
     }
 }

@@ -4,6 +4,7 @@ use crate::{
 use rusqlite::{Connection, OpenFlags};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone)]
 pub struct MigratorFactory {
     schema_dir: PathBuf,
     schemas: Vec<String>,

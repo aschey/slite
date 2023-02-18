@@ -1,4 +1,4 @@
-use crate::app_tui::{self};
+use crate::app_tui::{self, TuiAppMessage};
 use clap::{ArgAction, Args, CommandFactory, Parser, ValueEnum};
 use clap_complete::{generate, Shell};
 use color_eyre::Report;
@@ -13,7 +13,7 @@ use serde::{de::Visitor, Deserialize, Serialize};
 use slite::{
     error::InitializationError,
     read_extension_dir, read_sql_files,
-    tui::{BroadcastWriter, ConfigHandler, Message, MigratorFactory, ReloadableConfig},
+    tui::{AppMessage, BroadcastWriter, ConfigHandler, MigratorFactory, ReloadableConfig},
     Migrator, Options, SqlPrinter,
 };
 use std::{
@@ -34,6 +34,7 @@ use tracing_subscriber::{
     Layer, Registry,
 };
 use tracing_tree2::HierarchicalLayer;
+use tui_elm::Message;
 
 #[derive(ValueEnum, Clone)]
 enum SchemaType {
@@ -223,8 +224,22 @@ fn regex_parser(val: &str) -> Result<SerdeRegex, regex::Error> {
 
 pub struct ConfigStore {
     cli_config: Conf,
-    tx: mpsc::Sender<Message>,
+    tx: mpsc::Sender<tui_elm::Message>,
     reload_handle: Handle<Targets, Registry>,
+}
+
+impl ConfigStore {
+    pub fn new(
+        cli_config: Conf,
+        tx: mpsc::Sender<tui_elm::Message>,
+        reload_handle: Handle<Targets, Registry>,
+    ) -> Self {
+        Self {
+            cli_config,
+            tx,
+            reload_handle,
+        }
+    }
 }
 
 impl ConfigHandler<Conf> for ConfigStore {
@@ -233,19 +248,21 @@ impl ConfigHandler<Conf> for ConfigStore {
         previous_config: Arc<Conf>,
         new_config: Arc<Conf>,
         events: Vec<DebouncedEvent>,
-    ) -> Result<(), mpsc::error::SendError<Message>> {
+    ) -> Result<(), mpsc::error::SendError<tui_elm::Message>> {
         if previous_config.source != new_config.source {
-            self.tx.blocking_send(Message::SourceChanged(
-                previous_config.source.clone().unwrap_or_default(),
-                new_config.source.clone().unwrap_or_default(),
-            ))?;
+            self.tx
+                .blocking_send(Message::custom(TuiAppMessage::SourceChanged(
+                    previous_config.source.clone().unwrap_or_default(),
+                    new_config.source.clone().unwrap_or_default(),
+                )))?;
         }
 
         if previous_config.target != new_config.target {
-            self.tx.blocking_send(Message::TargetChanged(
-                previous_config.target.clone().unwrap_or_default(),
-                new_config.target.clone().unwrap_or_default(),
-            ))?;
+            self.tx
+                .blocking_send(Message::custom(TuiAppMessage::TargetChanged(
+                    previous_config.target.clone().unwrap_or_default(),
+                    new_config.target.clone().unwrap_or_default(),
+                )))?;
         }
 
         if previous_config.log_level != new_config.log_level {
@@ -253,17 +270,19 @@ impl ConfigHandler<Conf> for ConfigStore {
         }
 
         if previous_config.before_migration != new_config.before_migration {
-            self.tx.blocking_send(Message::PathChanged(
-                previous_config.before_migration.clone(),
-                new_config.before_migration.clone(),
-            ))?;
+            self.tx
+                .blocking_send(Message::custom(TuiAppMessage::PathChanged(
+                    previous_config.before_migration.clone(),
+                    new_config.before_migration.clone(),
+                )))?;
         }
 
         if previous_config.after_migration != new_config.after_migration {
-            self.tx.blocking_send(Message::PathChanged(
-                previous_config.after_migration.clone(),
-                new_config.after_migration.clone(),
-            ))?;
+            self.tx
+                .blocking_send(Message::custom(TuiAppMessage::PathChanged(
+                    previous_config.after_migration.clone(),
+                    new_config.after_migration.clone(),
+                )))?;
         }
 
         if previous_config.migrator_config_changed(&new_config) {
@@ -271,7 +290,8 @@ impl ConfigHandler<Conf> for ConfigStore {
         }
 
         if self.contains_path(&events, &new_config.source) {
-            self.tx.blocking_send(Message::FileChanged)?;
+            self.tx
+                .blocking_send(Message::custom(AppMessage::FileChanged))?;
         }
 
         if self.contains_path(&events, &new_config.before_migration)
@@ -336,25 +356,26 @@ impl ConfigStore {
     fn send_config_changed(
         &self,
         new_config: &Arc<Conf>,
-    ) -> Result<(), mpsc::error::SendError<Message>> {
-        self.tx.blocking_send(Message::ConfigChanged(slite::Config {
-            extensions: new_config
-                .extension_dir
-                .clone()
-                .map(read_extension_dir)
-                .unwrap_or_default(),
-            ignore: new_config.ignore.clone().map(|r| r.0),
-            before_migration: new_config
-                .before_migration
-                .clone()
-                .map(read_sql_files)
-                .unwrap_or_default(),
-            after_migration: new_config
-                .after_migration
-                .clone()
-                .map(read_sql_files)
-                .unwrap_or_default(),
-        }))
+    ) -> Result<(), mpsc::error::SendError<tui_elm::Message>> {
+        self.tx
+            .blocking_send(Message::custom(AppMessage::ConfigChanged(slite::Config {
+                extensions: new_config
+                    .extension_dir
+                    .clone()
+                    .map(read_extension_dir)
+                    .unwrap_or_default(),
+                ignore: new_config.ignore.clone().map(|r| r.0),
+                before_migration: new_config
+                    .before_migration
+                    .clone()
+                    .map(read_sql_files)
+                    .unwrap_or_default(),
+                after_migration: new_config
+                    .after_migration
+                    .clone()
+                    .map(read_sql_files)
+                    .unwrap_or_default(),
+            })))
     }
 
     fn update_log_level(&self, log_level: &Option<SerdeLevel>) {
@@ -634,17 +655,10 @@ impl App {
                     .with_filter(filter),
             )
             .init();
-        let (tx, rx) = mpsc::channel(32);
-        let handler = ConfigStore {
-            tx: tx.clone(),
-            cli_config: self.cli_config,
-            reload_handle,
-        };
-        let reloadable = ReloadableConfig::new(PathBuf::from("slite.toml"), handler);
+
+        
         app_tui::run_tui(
             MigratorFactory::new(self.source, self.target, self.config)?,
-            tx,
-            rx,
             reloadable,
         )
         .await?;
