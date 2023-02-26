@@ -15,6 +15,10 @@ impl BroadcastWriter {
         self.log_sender.subscribe()
     }
 
+    pub fn force_send(&self, msg: String) {
+        self.log_sender.send(msg).unwrap();
+    }
+
     pub fn enable() {
         ENABLED.store(true, Ordering::SeqCst);
     }
@@ -43,7 +47,7 @@ impl std::io::Write for BroadcastWriter {
         if ENABLED.load(Ordering::SeqCst) {
             self.log_sender
                 .send(std::str::from_utf8(buf).unwrap().to_owned())
-                .ok();
+                .unwrap();
         }
 
         Ok(buf_len)

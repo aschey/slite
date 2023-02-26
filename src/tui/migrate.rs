@@ -1,32 +1,24 @@
-use std::{
-    io::Stdout,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
-
-use ansi_to_tui::IntoText;
-use chrono::Local;
-use tokio::{sync::mpsc, task};
-use tracing::error;
-use tui::{
-    backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Span, Spans, Text},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph, StatefulWidget, Widget, Wrap},
-    Terminal,
-};
-use tui_elm::Model;
-
 use crate::{
     error::{InitializationError, SqlFormatError},
     Options,
 };
+use ansi_to_tui::IntoText;
+use chrono::Local;
+use futures::StreamExt;
+use std::{marker::PhantomData, sync::Arc};
+use tokio_stream::wrappers::BroadcastStream;
+use tracing::error;
+use tui::{
+    buffer::Buffer,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Span, Spans, Text},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, StatefulWidget, Widget, Wrap},
+};
+use tui_elm::Model;
 
 use super::{
-    panel, AppMessage, BiPanel, BiPanelState, BroadcastWriter, Button, MigratorFactory, Scrollable,
+    panel, BiPanel, BiPanelState, BroadcastWriter, Button, MigratorFactory, Scrollable,
     ScrollableState,
 };
 
@@ -35,10 +27,13 @@ pub enum MigrationMessage {
     Log(String),
 }
 
-pub struct MigrationView {}
+#[derive(Default)]
+pub struct MigrationView<'a> {
+    _phantom: PhantomData<&'a ()>,
+}
 
-impl StatefulWidget for MigrationView {
-    type State = MigrationState;
+impl<'a> StatefulWidget for MigrationView<'a> {
+    type State = MigrationState<'a>;
 
     fn render(
         self,
@@ -50,7 +45,7 @@ impl StatefulWidget for MigrationView {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(21), Constraint::Min(0)])
             .split(area);
-        // let controls_enabled = state.controls_enabled.load(Ordering::SeqCst);
+
         Widget::render(
             Paragraph::new(vec![
                 Button::new("     Dry Run     ")
@@ -177,7 +172,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 }
 
 #[derive(Debug, Clone)]
-pub struct MigrationState {
+pub struct MigrationState<'a> {
     selected: i32,
     num_buttons: i32,
     show_popup: bool,
@@ -189,9 +184,10 @@ pub struct MigrationState {
     bipanel_state: BiPanelState,
     controls_enabled: bool,
     migrator_factory: MigratorFactory,
+    _phantom: PhantomData<&'a ()>,
 }
 
-impl MigrationState {
+impl<'a> MigrationState<'a> {
     pub fn new(migrator_factory: MigratorFactory) -> Self {
         Self {
             migrator_factory,
@@ -205,6 +201,7 @@ impl MigrationState {
             formatted_logs: Text::default(),
             log_start_time: None,
             controls_enabled: true,
+            _phantom: Default::default(),
         }
     }
 
@@ -224,15 +221,14 @@ impl MigrationState {
     pub fn handle_event(
         &mut self,
         event: &crossterm::event::Event,
-    ) -> Result<Option<Box<dyn FnOnce(mpsc::Sender<tui_elm::Command>) + Send>>, InitializationError>
-    {
+    ) -> Result<Option<Box<dyn FnOnce() + Send>>, InitializationError> {
         use crossterm::event::{Event, KeyCode, KeyEventKind};
 
         if let Event::Key(key) = event {
             if key.kind == KeyEventKind::Press {
                 match key.code {
                     KeyCode::Up => self.previous(),
-
+                    KeyCode::Down => self.next(),
                     KeyCode::Left | KeyCode::Right if self.popup_active() => {
                         self.toggle_popup_confirm()
                     }
@@ -246,10 +242,7 @@ impl MigrationState {
         Ok(None)
     }
 
-    pub fn execute(
-        &mut self,
-    ) -> Result<Option<Box<dyn FnOnce(mpsc::Sender<tui_elm::Command>) + Send>>, InitializationError>
-    {
+    pub fn execute(&mut self) -> Result<Option<Box<dyn FnOnce() + Send>>, InitializationError> {
         if !self.controls_enabled {
             return Ok(None);
         }
@@ -266,20 +259,12 @@ impl MigrationState {
                     allow_deletions: true,
                     dry_run: false,
                 })?;
-                // let migration_script_tx = self.message_tx.clone();
 
                 self.controls_enabled = false;
-                return Ok(Some(Box::new(move |_| {
+                return Ok(Some(Box::new(move || {
                     if let Err(e) = migrator.migrate() {
                         error!("{e}");
                     }
-                    //controls_enabled.store(true, Ordering::SeqCst);
-                    // if let Err(e) =
-                    //     migration_script_tx.blocking_send(AppMessage::MigrationCompleted)
-                    // {
-                    //     error!("{e}");
-                    // }
-                    BroadcastWriter::disable();
                 })));
             }
         } else {
@@ -292,21 +277,12 @@ impl MigrationState {
                         allow_deletions: true,
                         dry_run: true,
                     })?;
-                    // let migration_script_tx = self.message_tx.clone();
-                    // let controls_enabled = self.controls_enabled.clone();
-                    // controls_enabled.store(false, Ordering::SeqCst);
+
                     self.controls_enabled = false;
-                    return Ok(Some(Box::new(move |_| {
+                    return Ok(Some(Box::new(move || {
                         if let Err(e) = migrator.migrate() {
                             error!("{e}");
                         }
-                        //controls_enabled.store(true, Ordering::SeqCst);
-                        // if let Err(e) =
-                        //     migration_script_tx.blocking_send(AppMessage::ProcessCompleted)
-                        // {
-                        //     error!("{e}");
-                        // }
-                        BroadcastWriter::disable();
                     })));
                 }
                 1 => {
@@ -317,29 +293,16 @@ impl MigrationState {
                         allow_deletions: true,
                         dry_run: true,
                     })?;
-                    //let migration_script_tx = self.message_tx.clone();
-                    // let controls_enabled = self.controls_enabled.clone();
-                    // controls_enabled.store(false, Ordering::SeqCst);
+
                     self.controls_enabled = false;
-                    return Ok(Some(Box::new(move |tx| {
+                    return Ok(Some(Box::new(move || {
+                        let writer = BroadcastWriter::default();
+
                         if let Err(e) = migrator.migrate_with_callback(|statement| {
-                            if let Err(e) = tx.blocking_send(tui_elm::Command::simple(
-                                tui_elm::Message::Custom(Box::new(MigrationMessage::Log(
-                                    statement,
-                                ))),
-                            )) {
-                                error!("{e}");
-                            }
+                            writer.force_send(format!("{statement}\n"));
                         }) {
                             error!("{e}");
                         };
-
-                        //  controls_enabled.store(true, Ordering::SeqCst);
-                        // if let Err(e) =
-                        //     migration_script_tx.blocking_send(AppMessage::ProcessCompleted)
-                        // {
-                        //     error!("{e}");
-                        // }
                     })));
                 }
                 2 => {
@@ -363,12 +326,12 @@ impl MigrationState {
         self.popup_button_index = (self.popup_button_index + 1) % 2;
     }
 
-    pub fn add_log(&mut self, log: String) -> Result<(), SqlFormatError> {
-        self.logs += &log;
+    pub fn add_log(&mut self, log: &str) -> Result<(), SqlFormatError> {
+        self.logs += log;
         self.formatted_logs = self
             .logs
             .into_text()
-            .map_err(|e| SqlFormatError::TextFormattingFailure(log, e))?;
+            .map_err(|e| SqlFormatError::TextFormattingFailure(log.to_string(), e))?;
         self.scroller
             .set_content_height(self.formatted_logs.height() as u16);
         Ok(())
@@ -393,7 +356,7 @@ impl MigrationState {
     }
 }
 
-impl BiPanel for MigrationState {
+impl<'a> BiPanel for MigrationState<'a> {
     fn left_next(&mut self) {
         if !self.show_popup {
             self.selected = (self.selected + 1).rem_euclid(self.num_buttons);
@@ -415,13 +378,18 @@ impl BiPanel for MigrationState {
     }
 }
 
-impl Model for MigrationState {
-    type Writer = Terminal<CrosstermBackend<Stdout>>;
+impl<'a> Model for MigrationState<'a> {
+    type Writer = (Rect, &'a mut Buffer);
 
     type Error = SqlFormatError;
 
-    fn init(&self) -> Result<tui_elm::OptionalCommand, Self::Error> {
-        Ok(None)
+    fn init(&mut self) -> Result<tui_elm::OptionalCommand, Self::Error> {
+        Ok(Some(tui_elm::Command::new_async(|_, _| async move {
+            let log_stream = BroadcastStream::new(BroadcastWriter::default().receiver());
+            Some(tui_elm::Message::Stream(Box::pin(log_stream.map(|log| {
+                tui_elm::Message::custom(MigrationMessage::Log(log.unwrap()))
+            }))))
+        })))
     }
 
     fn update(
@@ -431,8 +399,8 @@ impl Model for MigrationState {
         match msg.as_ref() {
             tui_elm::Message::TermEvent(msg) => {
                 if let Some(func) = self.handle_event(msg).unwrap() {
-                    return Ok(Some(tui_elm::Command::new_blocking(|tx| {
-                        func(tx);
+                    return Ok(Some(tui_elm::Command::new_blocking(|_, _| {
+                        func();
                         Some(tui_elm::Message::Custom(Box::new(
                             MigrationMessage::ProcessCompleted,
                         )))
@@ -443,10 +411,12 @@ impl Model for MigrationState {
                 if let Some(msg) = msg.downcast_ref::<MigrationMessage>() {
                     match msg {
                         MigrationMessage::Log(log) => {
-                            self.add_log(format!("{log}\n"))?;
+                            self.add_log(log)?;
                         }
+
                         MigrationMessage::ProcessCompleted => {
                             self.controls_enabled = true;
+                            BroadcastWriter::disable();
                         }
                     }
                 }
@@ -456,7 +426,8 @@ impl Model for MigrationState {
         Ok(None)
     }
 
-    fn view(&self, writer: &mut Self::Writer) -> Result<(), Self::Error> {
-        todo!()
+    fn view(&self, (rect, buf): &mut Self::Writer) -> Result<(), Self::Error> {
+        StatefulWidget::render(MigrationView::default(), *rect, buf, &mut self.clone());
+        Ok(())
     }
 }

@@ -32,7 +32,7 @@ use regex::Regex;
 use rusqlite::Connection;
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     fmt::Debug,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -316,7 +316,7 @@ impl Migrator {
         let create_table_span = span!(Level::INFO, "Creating tables");
         let _create_table_guard = create_table_span.entered();
 
-        let new_tables: HashMap<&String, &String> = pristine_metadata
+        let new_tables: BTreeMap<&String, &String> = pristine_metadata
             .tables()
             .iter()
             .filter(|(k, _)| !metadata.tables().contains_key(*k))
@@ -388,7 +388,7 @@ impl Migrator {
         let modify_table_span = span!(Level::INFO, "Modifying tables");
         let _modify_table_guard = modify_table_span.entered();
 
-        let modified_tables: HashMap<&String, &String> = pristine_metadata
+        let modified_tables: BTreeMap<&String, &String> = pristine_metadata
             .tables()
             .iter()
             .filter(|(name, sql)| {
@@ -601,7 +601,7 @@ impl Ord for Object {
     }
 }
 
-pub struct Objects(HashMap<ObjectType, Vec<String>>);
+pub struct Objects(BTreeMap<ObjectType, Vec<String>>);
 
 impl Objects {
     pub fn merge(mut self, other: Self) -> Self {

@@ -1,6 +1,6 @@
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -11,23 +11,22 @@ use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
 use tokio::sync::mpsc;
 use tracing::error;
 
-use super::AppMessage;
-
 pub trait ConfigHandler<T: Config + Send + Sync + 'static>: Send + 'static {
     fn on_update(
         &mut self,
         previous_config: Arc<T>,
         new_config: Arc<T>,
         events: Vec<DebouncedEvent>,
-    ) -> Result<(), mpsc::error::SendError<tui_elm::Message>>;
+    ) -> Result<(), mpsc::error::SendError<tui_elm::Command>>;
     fn create_config(&self, path: &Path) -> T;
     fn watch_paths(&self, path: &Path) -> Vec<PathBuf>;
 }
 
+#[derive(Clone)]
 pub struct ReloadableConfig<T: Config + Send + Sync + 'static> {
     current_config: Arc<ArcSwap<T>>,
     cached_config: Arc<ArcSwap<T>>,
-    debouncer: Debouncer<RecommendedWatcher>,
+    debouncer: Arc<Mutex<Debouncer<RecommendedWatcher>>>,
 }
 
 impl<T: Config + Send + Sync + 'static> ReloadableConfig<T> {
@@ -59,7 +58,7 @@ impl<T: Config + Send + Sync + 'static> ReloadableConfig<T> {
         }
 
         Self {
-            debouncer,
+            debouncer: Arc::new(Mutex::new(debouncer)),
             cached_config,
             current_config,
         }
@@ -78,13 +77,20 @@ impl<T: Config + Send + Sync + 'static> ReloadableConfig<T> {
     pub fn switch_path(&mut self, old_path: Option<&Path>, new_path: Option<&Path>) {
         if let Some(old_path) = old_path {
             if old_path.exists() {
-                self.debouncer.watcher().unwatch(old_path).unwrap();
+                self.debouncer
+                    .lock()
+                    .unwrap()
+                    .watcher()
+                    .unwatch(old_path)
+                    .unwrap();
             }
         }
 
         if let Some(new_path) = new_path {
             if new_path.exists() {
                 self.debouncer
+                    .lock()
+                    .unwrap()
                     .watcher()
                     .watch(new_path, RecursiveMode::Recursive)
                     .unwrap();

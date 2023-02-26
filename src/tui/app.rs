@@ -1,10 +1,9 @@
-use super::{MigrationState, MigrationView, MigratorFactory, SqlState, SqlView};
+use super::{MigrationState, MigratorFactory, SqlState, SqlView};
 use crate::{
     error::{InitializationError, RefreshError, SqlFormatError},
     Config,
 };
 use std::{io::Stdout, marker::PhantomData, path::PathBuf, sync::Arc};
-use tokio::sync::mpsc;
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -92,7 +91,7 @@ impl<'a> StatefulWidget for App<'a> {
             2 => {
                 StatefulWidget::render(SqlView::default(), chunks[1], buf, &mut state.diff_schema);
             }
-            3 => StatefulWidget::render(MigrationView {}, chunks[1], buf, &mut state.migration),
+            3 => state.migration.view(&mut (chunks[1], buf)).unwrap(), //StatefulWidget::render(MigrationView {}, chunks[1], buf, &mut state.migration),
             _ => {}
         }
     }
@@ -105,7 +104,7 @@ pub struct AppState<'a> {
     source_schema: SqlState,
     target_schema: SqlState,
     diff_schema: SqlState,
-    migration: MigrationState,
+    migration: MigrationState<'a>,
 }
 
 impl<'a> AppState<'a> {
@@ -191,19 +190,12 @@ impl<'a> AppState<'a> {
                     (KeyCode::Down, 0) => self.source_schema.next(),
                     (KeyCode::Down, 1) => self.target_schema.next(),
                     (KeyCode::Down, 2) => self.diff_schema.next(),
-                    //  (KeyCode::Down, 3) => self.migration.next(),
                     (KeyCode::Up, 0) => self.source_schema.previous(),
                     (KeyCode::Up, 1) => self.target_schema.previous(),
                     (KeyCode::Up, 2) => self.diff_schema.previous(),
-                    //(KeyCode::Up, 3) => self.migration.previous(),
                     (KeyCode::Left | KeyCode::Right, 0) => self.source_schema.toggle_focus(),
                     (KeyCode::Left | KeyCode::Right, 1) => self.target_schema.toggle_focus(),
                     (KeyCode::Left | KeyCode::Right, 2) => self.diff_schema.toggle_focus(),
-                    // (KeyCode::Left | KeyCode::Right, 3) if self.migration.popup_active() => {
-                    //     self.migration.toggle_popup_confirm()
-                    // }
-                    //     (KeyCode::Left | KeyCode::Right, 3) => self.migration.toggle_focus(),
-                    // (KeyCode::Enter, 3) => self.migration.execute()?,
                     _ => {}
                 }
             }
@@ -211,10 +203,6 @@ impl<'a> AppState<'a> {
 
         Ok(ControlFlow::Continue)
     }
-
-    // pub fn add_log(&mut self, log: String) -> Result<(), SqlFormatError> {
-    //     self.migration.add_log(log)
-    // }
 }
 
 impl<'a> Model for AppState<'a> {
@@ -222,13 +210,16 @@ impl<'a> Model for AppState<'a> {
 
     type Error = RefreshError;
 
-    fn init(&self) -> Result<OptionalCommand, Self::Error> {
-        Ok(None)
+    fn init(&mut self) -> Result<OptionalCommand, Self::Error> {
+        Ok(self.migration.init().unwrap())
     }
 
     fn update(&mut self, msg: Arc<tui_elm::Message>) -> Result<OptionalCommand, Self::Error> {
+        let mut cmds = vec![];
         if self.index == 3 {
-            self.migration.update(msg.clone()).unwrap();
+            if let Some(cmd) = self.migration.update(msg.clone()).unwrap() {
+                cmds.push(cmd);
+            }
         }
         match msg.as_ref() {
             tui_elm::Message::TermEvent(e) => {
@@ -242,34 +233,21 @@ impl<'a> Model for AppState<'a> {
             tui_elm::Message::Custom(msg) => {
                 if let Some(msg) = msg.downcast_ref::<AppMessage>() {
                     match msg {
-                        // AppMessage::Log(log) => {
-                        //     self.add_log(format!("{log}\n"))
-                        //         .map_err(RefreshError::SqlFormatFailure)?;
-                        // }
                         AppMessage::FileChanged | AppMessage::MigrationCompleted => {
                             self.refresh()?;
                         }
                         AppMessage::ConfigChanged(config) => {
                             self.update_config(config.clone())?;
                         }
-                        // AppMessage::PathChanged(previous, current) => {
-                        //     config.switch_path(previous.as_deref(), current.as_deref());
-                        // }
-                        // AppMessage::SourceChanged(previous_source, current_source) => {
-                        //     config.switch_path(Some(&previous_source), Some(&current_source));
-                        //     app.state.set_schema_dir(current_source)?;
-                        // }
-                        // AppMessage::TargetChanged(previous_target, current_target) => {
-                        //     config.switch_path(Some(&previous_target), Some(&current_target));
-                        //     app.state.set_target_path(current_target)?;
-                        // }
                         _ => {}
                     }
                 }
             }
             _ => {}
         };
-        Ok(None)
+        Ok(Some(tui_elm::Command::simple(tui_elm::Message::Batch(
+            cmds,
+        ))))
     }
 
     fn view(&self, writer: &mut Self::Writer) -> Result<(), Self::Error> {
