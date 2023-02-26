@@ -24,6 +24,7 @@ use super::{
 
 pub enum MigrationMessage {
     ProcessCompleted,
+    MigrationCompleted,
     Log(String),
 }
 
@@ -221,7 +222,7 @@ impl<'a> MigrationState<'a> {
     pub fn handle_event(
         &mut self,
         event: &crossterm::event::Event,
-    ) -> Result<Option<Box<dyn FnOnce() + Send>>, InitializationError> {
+    ) -> Result<Option<Box<dyn FnOnce() -> MigrationMessage + Send>>, InitializationError> {
         use crossterm::event::{Event, KeyCode, KeyEventKind};
 
         if let Event::Key(key) = event {
@@ -242,7 +243,9 @@ impl<'a> MigrationState<'a> {
         Ok(None)
     }
 
-    pub fn execute(&mut self) -> Result<Option<Box<dyn FnOnce() + Send>>, InitializationError> {
+    pub fn execute(
+        &mut self,
+    ) -> Result<Option<Box<dyn FnOnce() -> MigrationMessage + Send>>, InitializationError> {
         if !self.controls_enabled {
             return Ok(None);
         }
@@ -265,6 +268,7 @@ impl<'a> MigrationState<'a> {
                     if let Err(e) = migrator.migrate() {
                         error!("{e}");
                     }
+                    MigrationMessage::MigrationCompleted
                 })));
             }
         } else {
@@ -283,6 +287,7 @@ impl<'a> MigrationState<'a> {
                         if let Err(e) = migrator.migrate() {
                             error!("{e}");
                         }
+                        MigrationMessage::ProcessCompleted
                     })));
                 }
                 1 => {
@@ -303,6 +308,7 @@ impl<'a> MigrationState<'a> {
                         }) {
                             error!("{e}");
                         };
+                        MigrationMessage::ProcessCompleted
                     })));
                 }
                 2 => {
@@ -400,10 +406,8 @@ impl<'a> Model for MigrationState<'a> {
             tui_elm::Message::TermEvent(msg) => {
                 if let Some(func) = self.handle_event(msg).unwrap() {
                     return Ok(Some(tui_elm::Command::new_blocking(|_, _| {
-                        func();
-                        Some(tui_elm::Message::Custom(Box::new(
-                            MigrationMessage::ProcessCompleted,
-                        )))
+                        let msg = func();
+                        Some(tui_elm::Message::Custom(Box::new(msg)))
                     })));
                 }
             }
@@ -414,7 +418,8 @@ impl<'a> Model for MigrationState<'a> {
                             self.add_log(log)?;
                         }
 
-                        MigrationMessage::ProcessCompleted => {
+                        MigrationMessage::ProcessCompleted
+                        | MigrationMessage::MigrationCompleted => {
                             self.controls_enabled = true;
                             BroadcastWriter::disable();
                         }

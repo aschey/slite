@@ -1,4 +1,4 @@
-use super::{MigrationState, MigratorFactory, SqlState, SqlView};
+use super::{MigrationMessage, MigrationState, MigratorFactory, SqlState};
 use crate::{
     error::{InitializationError, RefreshError, SqlFormatError},
     Config,
@@ -23,7 +23,6 @@ pub enum ControlFlow {
 #[derive(Clone, Debug)]
 pub enum AppMessage {
     ProcessCompleted,
-    MigrationCompleted,
     FileChanged,
     ConfigChanged(Config),
 }
@@ -72,26 +71,10 @@ impl<'a> StatefulWidget for App<'a> {
         Widget::render(tabs, chunks[0], buf);
 
         match state.index {
-            0 => {
-                StatefulWidget::render(
-                    SqlView::default(),
-                    chunks[1],
-                    buf,
-                    &mut state.source_schema,
-                );
-            }
-            1 => {
-                StatefulWidget::render(
-                    SqlView::default(),
-                    chunks[1],
-                    buf,
-                    &mut state.target_schema,
-                );
-            }
-            2 => {
-                StatefulWidget::render(SqlView::default(), chunks[1], buf, &mut state.diff_schema);
-            }
-            3 => state.migration.view(&mut (chunks[1], buf)).unwrap(), //StatefulWidget::render(MigrationView {}, chunks[1], buf, &mut state.migration),
+            0 => state.source_schema.view(&mut (chunks[1], buf)).unwrap(),
+            1 => state.target_schema.view(&mut (chunks[1], buf)).unwrap(),
+            2 => state.diff_schema.view(&mut (chunks[1], buf)).unwrap(),
+            3 => state.migration.view(&mut (chunks[1], buf)).unwrap(),
             _ => {}
         }
     }
@@ -101,9 +84,9 @@ impl<'a> StatefulWidget for App<'a> {
 pub struct AppState<'a> {
     pub titles: Vec<&'a str>,
     pub index: i32,
-    source_schema: SqlState,
-    target_schema: SqlState,
-    diff_schema: SqlState,
+    source_schema: SqlState<'a>,
+    target_schema: SqlState<'a>,
+    diff_schema: SqlState<'a>,
     migration: MigrationState<'a>,
 }
 
@@ -187,15 +170,6 @@ impl<'a> AppState<'a> {
                     (KeyCode::Char('q'), _) => return Ok(ControlFlow::Quit),
                     (KeyCode::Tab, _) => self.next_tab(),
                     (KeyCode::BackTab, _) => self.previous_tab(),
-                    (KeyCode::Down, 0) => self.source_schema.next(),
-                    (KeyCode::Down, 1) => self.target_schema.next(),
-                    (KeyCode::Down, 2) => self.diff_schema.next(),
-                    (KeyCode::Up, 0) => self.source_schema.previous(),
-                    (KeyCode::Up, 1) => self.target_schema.previous(),
-                    (KeyCode::Up, 2) => self.diff_schema.previous(),
-                    (KeyCode::Left | KeyCode::Right, 0) => self.source_schema.toggle_focus(),
-                    (KeyCode::Left | KeyCode::Right, 1) => self.target_schema.toggle_focus(),
-                    (KeyCode::Left | KeyCode::Right, 2) => self.diff_schema.toggle_focus(),
                     _ => {}
                 }
             }
@@ -216,11 +190,30 @@ impl<'a> Model for AppState<'a> {
 
     fn update(&mut self, msg: Arc<tui_elm::Message>) -> Result<OptionalCommand, Self::Error> {
         let mut cmds = vec![];
-        if self.index == 3 {
-            if let Some(cmd) = self.migration.update(msg.clone()).unwrap() {
-                cmds.push(cmd);
+        match self.index {
+            0 => {
+                if let Some(cmd) = self.source_schema.update(msg.clone()).unwrap() {
+                    cmds.push(cmd);
+                }
             }
+            1 => {
+                if let Some(cmd) = self.target_schema.update(msg.clone()).unwrap() {
+                    cmds.push(cmd);
+                }
+            }
+            2 => {
+                if let Some(cmd) = self.diff_schema.update(msg.clone()).unwrap() {
+                    cmds.push(cmd);
+                }
+            }
+            3 => {
+                if let Some(cmd) = self.migration.update(msg.clone()).unwrap() {
+                    cmds.push(cmd);
+                }
+            }
+            _ => {}
         }
+
         match msg.as_ref() {
             tui_elm::Message::TermEvent(e) => {
                 let control_flow = self
@@ -233,7 +226,7 @@ impl<'a> Model for AppState<'a> {
             tui_elm::Message::Custom(msg) => {
                 if let Some(msg) = msg.downcast_ref::<AppMessage>() {
                     match msg {
-                        AppMessage::FileChanged | AppMessage::MigrationCompleted => {
+                        AppMessage::FileChanged => {
                             self.refresh()?;
                         }
                         AppMessage::ConfigChanged(config) => {
@@ -241,6 +234,11 @@ impl<'a> Model for AppState<'a> {
                         }
                         _ => {}
                     }
+                }
+                if let Some(MigrationMessage::MigrationCompleted) =
+                    msg.downcast_ref::<MigrationMessage>()
+                {
+                    self.refresh()?;
                 }
             }
             _ => {}

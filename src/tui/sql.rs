@@ -1,3 +1,5 @@
+use std::{marker::PhantomData, sync::Arc};
+
 use super::{
     panel, BiPanel, BiPanelState, Objects, ObjectsState, Scrollable, ScrollableState, StyledObject,
     StyledObjects,
@@ -5,17 +7,21 @@ use super::{
 use crate::{diff_metadata, error::SqlFormatError, Metadata, MigrationMetadata, SqlPrinter};
 use ansi_to_tui::IntoText;
 use tui::{
-    layout::{Constraint, Direction, Layout},
+    buffer::Buffer,
+    layout::{Constraint, Direction, Layout, Rect},
     style::Color,
     text::Text,
     widgets::{Paragraph, StatefulWidget, Wrap},
 };
+use tui_elm::{Message, Model, OptionalCommand};
 
 #[derive(Debug, Clone, Default)]
-pub struct SqlView {}
+pub struct SqlView<'a> {
+    _phantom: PhantomData<&'a ()>,
+}
 
-impl StatefulWidget for SqlView {
-    type State = SqlState;
+impl<'a> StatefulWidget for SqlView<'a> {
+    type State = SqlState<'a>;
 
     fn render(
         self,
@@ -60,14 +66,14 @@ impl StatefulWidget for SqlView {
 }
 
 #[derive(Debug, Clone)]
-pub struct SqlState {
-    sql: Vec<Text<'static>>,
+pub struct SqlState<'a> {
+    sql: Vec<Text<'a>>,
     state: ObjectsState,
     scroller: ScrollableState,
     bipanel_state: BiPanelState,
 }
 
-impl SqlState {
+impl<'a> SqlState<'a> {
     pub fn diff(schemas: MigrationMetadata) -> Result<Self, SqlFormatError> {
         let diffs = diff_metadata(schemas);
 
@@ -177,9 +183,25 @@ impl SqlState {
     pub fn select(&mut self, item: &str) {
         self.state.select(item);
     }
+
+    #[cfg(feature = "crossterm-events")]
+    pub fn handle_event(&mut self, event: &crossterm::event::Event) {
+        use crossterm::event::{Event, KeyCode, KeyEventKind};
+
+        if let Event::Key(key) = event {
+            if key.kind == KeyEventKind::Press {
+                match key.code {
+                    KeyCode::Up => self.previous(),
+                    KeyCode::Down => self.next(),
+                    KeyCode::Left | KeyCode::Right => self.toggle_focus(),
+                    _ => {}
+                }
+            }
+        }
+    }
 }
 
-impl BiPanel for SqlState {
+impl<'a> BiPanel for SqlState<'a> {
     fn left_next(&mut self) {
         if self.sql.is_empty() {
             return;
@@ -208,5 +230,29 @@ impl BiPanel for SqlState {
 
     fn right_previous(&mut self) {
         self.scroller.scroll_up();
+    }
+}
+
+impl<'a> Model for SqlState<'a> {
+    type Writer = (Rect, &'a mut Buffer);
+    type Error = std::io::Error;
+
+    fn init(&mut self) -> Result<OptionalCommand, Self::Error> {
+        Ok(None)
+    }
+    fn update(&mut self, msg: Arc<Message>) -> Result<OptionalCommand, Self::Error> {
+        match msg.as_ref() {
+            tui_elm::Message::TermEvent(msg) => {
+                self.handle_event(msg);
+            }
+            tui_elm::Message::Custom(msg) => {}
+            _ => {}
+        }
+        Ok(None)
+    }
+
+    fn view(&self, (rect, buf): &mut Self::Writer) -> Result<(), Self::Error> {
+        StatefulWidget::render(SqlView::default(), *rect, buf, &mut self.clone());
+        Ok(())
     }
 }
