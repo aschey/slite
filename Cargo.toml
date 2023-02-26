@@ -42,7 +42,7 @@ tracing = "0.1"
 tracing-subscriber = {version = "0.3", optional = true}
 tracing-tree2 = {version = "0.3.0", optional = true}
 tui = {version = "0.19", optional = true}
-tui-elm = {path = "../tui-elm", optional = true}
+tui-elm = {git = "https://github.com/aschey/tui-elm", rev = "35fd7aa8f7250717000778ac984100c0794a07af", optional = true}
 
 [features]
 application = [
