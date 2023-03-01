@@ -4,6 +4,7 @@ use crate::{
 };
 use ansi_to_tui::IntoText;
 use chrono::Local;
+use elm_ui::{Command, Message, Model, OptionalCommand};
 use futures::StreamExt;
 use std::{marker::PhantomData, sync::Arc};
 use tokio_stream::wrappers::BroadcastStream;
@@ -15,7 +16,6 @@ use tui::{
     text::{Span, Spans, Text},
     widgets::{Block, BorderType, Borders, Clear, Paragraph, StatefulWidget, Widget, Wrap},
 };
-use tui_elm::Model;
 
 use super::{
     panel, BiPanel, BiPanelState, BroadcastWriter, Button, MigratorFactory, Scrollable,
@@ -389,35 +389,31 @@ impl<'a> Model for MigrationState<'a> {
 
     type Error = SqlFormatError;
 
-    fn init(&mut self) -> Result<tui_elm::OptionalCommand, Self::Error> {
-        Ok(Some(tui_elm::Command::new_async(|_, _| async move {
+    fn init(&mut self) -> Result<OptionalCommand, Self::Error> {
+        Ok(Some(Command::new_async(|_, _| async move {
             let log_stream = BroadcastStream::new(BroadcastWriter::default().receiver());
-            Some(tui_elm::Message::Stream(Box::pin(log_stream.map(|log| {
-                tui_elm::Message::custom(MigrationMessage::Log(log.unwrap()))
+            Some(Message::Stream(Box::pin(log_stream.map(|log| {
+                Message::custom(MigrationMessage::Log(log.unwrap()))
             }))))
         })))
     }
 
-    fn update(
-        &mut self,
-        msg: Arc<tui_elm::Message>,
-    ) -> Result<tui_elm::OptionalCommand, Self::Error> {
+    fn update(&mut self, msg: Arc<Message>) -> Result<OptionalCommand, Self::Error> {
         match msg.as_ref() {
-            tui_elm::Message::TermEvent(msg) => {
+            Message::TermEvent(msg) => {
                 if let Some(func) = self.handle_event(msg).unwrap() {
-                    return Ok(Some(tui_elm::Command::new_blocking(|_, _| {
+                    return Ok(Some(Command::new_blocking(|_, _| {
                         let msg = func();
-                        Some(tui_elm::Message::Custom(Box::new(msg)))
+                        Some(Message::Custom(Box::new(msg)))
                     })));
                 }
             }
-            tui_elm::Message::Custom(msg) => {
+            Message::Custom(msg) => {
                 if let Some(msg) = msg.downcast_ref::<MigrationMessage>() {
                     match msg {
                         MigrationMessage::Log(log) => {
                             self.add_log(log)?;
                         }
-
                         MigrationMessage::ProcessCompleted
                         | MigrationMessage::MigrationCompleted => {
                             self.controls_enabled = true;

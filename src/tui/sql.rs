@@ -6,6 +6,7 @@ use super::{
 };
 use crate::{diff_metadata, error::SqlFormatError, Metadata, MigrationMetadata, SqlPrinter};
 use ansi_to_tui::IntoText;
+use elm_ui::{Message, Model, OptionalCommand};
 use tui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -13,7 +14,6 @@ use tui::{
     text::Text,
     widgets::{Paragraph, StatefulWidget, Wrap},
 };
-use tui_elm::{Message, Model, OptionalCommand};
 
 #[derive(Debug, Clone, Default)]
 pub struct SqlView<'a> {
@@ -242,10 +242,10 @@ impl<'a> Model for SqlState<'a> {
     }
     fn update(&mut self, msg: Arc<Message>) -> Result<OptionalCommand, Self::Error> {
         match msg.as_ref() {
-            tui_elm::Message::TermEvent(msg) => {
+            Message::TermEvent(msg) => {
                 self.handle_event(msg);
             }
-            tui_elm::Message::Custom(msg) => {}
+            Message::Custom(msg) => {}
             _ => {}
         }
         Ok(None)

@@ -3,6 +3,7 @@ use crate::{
     error::{InitializationError, RefreshError, SqlFormatError},
     Config,
 };
+use elm_ui::{Command, Message, Model, OptionalCommand};
 use std::{io::Stdout, marker::PhantomData, path::PathBuf, sync::Arc};
 use tui::{
     backend::CrosstermBackend,
@@ -12,7 +13,6 @@ use tui::{
     widgets::{Block, BorderType, Borders, StatefulWidget, Tabs, Widget},
     Terminal,
 };
-use tui_elm::{Command, Model, OptionalCommand};
 
 #[derive(PartialEq, Eq)]
 pub enum ControlFlow {
@@ -22,7 +22,6 @@ pub enum ControlFlow {
 
 #[derive(Clone, Debug)]
 pub enum AppMessage {
-    ProcessCompleted,
     FileChanged,
     ConfigChanged(Config),
 }
@@ -188,8 +187,9 @@ impl<'a> Model for AppState<'a> {
         Ok(self.migration.init().unwrap())
     }
 
-    fn update(&mut self, msg: Arc<tui_elm::Message>) -> Result<OptionalCommand, Self::Error> {
+    fn update(&mut self, msg: Arc<elm_ui::Message>) -> Result<OptionalCommand, Self::Error> {
         let mut cmds = vec![];
+
         match self.index {
             0 => {
                 if let Some(cmd) = self.source_schema.update(msg.clone()).unwrap() {
@@ -215,7 +215,7 @@ impl<'a> Model for AppState<'a> {
         }
 
         match msg.as_ref() {
-            tui_elm::Message::TermEvent(e) => {
+            Message::TermEvent(e) => {
                 let control_flow = self
                     .handle_event(e)
                     .map_err(RefreshError::InitializationFailure)?;
@@ -223,7 +223,7 @@ impl<'a> Model for AppState<'a> {
                     return Ok(Some(Command::quit()));
                 }
             }
-            tui_elm::Message::Custom(msg) => {
+            Message::Custom(msg) => {
                 if let Some(msg) = msg.downcast_ref::<AppMessage>() {
                     match msg {
                         AppMessage::FileChanged => {
@@ -232,7 +232,6 @@ impl<'a> Model for AppState<'a> {
                         AppMessage::ConfigChanged(config) => {
                             self.update_config(config.clone())?;
                         }
-                        _ => {}
                     }
                 }
                 if let Some(MigrationMessage::MigrationCompleted) =
@@ -243,9 +242,7 @@ impl<'a> Model for AppState<'a> {
             }
             _ => {}
         };
-        Ok(Some(tui_elm::Command::simple(tui_elm::Message::Batch(
-            cmds,
-        ))))
+        Ok(Some(Command::simple(Message::Batch(cmds))))
     }
 
     fn view(&self, writer: &mut Self::Writer) -> Result<(), Self::Error> {

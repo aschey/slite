@@ -3,6 +3,7 @@ use clap::{ArgAction, Args, CommandFactory, Parser, ValueEnum};
 use clap_complete::{generate, Shell};
 use color_eyre::Report;
 use confique::{toml, Config};
+use elm_ui::{Command, Message};
 use minus::Pager;
 use normpath::PathExt;
 use notify_debouncer_mini::DebouncedEvent;
@@ -34,7 +35,6 @@ use tracing_subscriber::{
     Layer, Registry,
 };
 use tracing_tree2::HierarchicalLayer;
-use tui_elm::Message;
 
 #[derive(ValueEnum, Clone)]
 enum SchemaType {
@@ -55,7 +55,7 @@ enum AppConfig {
 }
 
 #[derive(clap::Subcommand, Clone)]
-enum Command {
+enum AppCommand {
     Migrate { migrate: Migrate },
     Config { config: AppConfig },
     Diff,
@@ -195,7 +195,7 @@ impl Conf {
 #[derive(clap::Parser)]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Command>,
+    command: Option<AppCommand>,
     #[command(flatten)]
     config: Conf,
 }
@@ -224,14 +224,14 @@ fn regex_parser(val: &str) -> Result<SerdeRegex, regex::Error> {
 
 pub struct ConfigStore {
     cli_config: Conf,
-    tx: mpsc::Sender<tui_elm::Command>,
+    tx: mpsc::Sender<elm_ui::Command>,
     reload_handle: Handle<Targets, Registry>,
 }
 
 impl ConfigStore {
     pub fn new(
         cli_config: Conf,
-        tx: mpsc::Sender<tui_elm::Command>,
+        tx: mpsc::Sender<elm_ui::Command>,
         reload_handle: Handle<Targets, Registry>,
     ) -> Self {
         Self {
@@ -248,25 +248,23 @@ impl ConfigHandler<Conf> for ConfigStore {
         previous_config: Arc<Conf>,
         new_config: Arc<Conf>,
         events: Vec<DebouncedEvent>,
-    ) -> Result<(), mpsc::error::SendError<tui_elm::Command>> {
+    ) -> Result<(), mpsc::error::SendError<Command>> {
         if previous_config.source != new_config.source {
-            self.tx
-                .blocking_send(tui_elm::Command::simple(Message::custom(
-                    TuiAppMessage::SourceChanged(
-                        previous_config.source.clone().unwrap_or_default(),
-                        new_config.source.clone().unwrap_or_default(),
-                    ),
-                )))?;
+            self.tx.blocking_send(Command::simple(Message::custom(
+                TuiAppMessage::SourceChanged(
+                    previous_config.source.clone().unwrap_or_default(),
+                    new_config.source.clone().unwrap_or_default(),
+                ),
+            )))?;
         }
 
         if previous_config.target != new_config.target {
-            self.tx
-                .blocking_send(tui_elm::Command::simple(Message::custom(
-                    TuiAppMessage::TargetChanged(
-                        previous_config.target.clone().unwrap_or_default(),
-                        new_config.target.clone().unwrap_or_default(),
-                    ),
-                )))?;
+            self.tx.blocking_send(Command::simple(Message::custom(
+                TuiAppMessage::TargetChanged(
+                    previous_config.target.clone().unwrap_or_default(),
+                    new_config.target.clone().unwrap_or_default(),
+                ),
+            )))?;
         }
 
         if previous_config.log_level != new_config.log_level {
@@ -274,23 +272,21 @@ impl ConfigHandler<Conf> for ConfigStore {
         }
 
         if previous_config.before_migration != new_config.before_migration {
-            self.tx
-                .blocking_send(tui_elm::Command::simple(Message::custom(
-                    TuiAppMessage::PathChanged(
-                        previous_config.before_migration.clone(),
-                        new_config.before_migration.clone(),
-                    ),
-                )))?;
+            self.tx.blocking_send(Command::simple(Message::custom(
+                TuiAppMessage::PathChanged(
+                    previous_config.before_migration.clone(),
+                    new_config.before_migration.clone(),
+                ),
+            )))?;
         }
 
         if previous_config.after_migration != new_config.after_migration {
-            self.tx
-                .blocking_send(tui_elm::Command::simple(Message::custom(
-                    TuiAppMessage::PathChanged(
-                        previous_config.after_migration.clone(),
-                        new_config.after_migration.clone(),
-                    ),
-                )))?;
+            self.tx.blocking_send(Command::simple(Message::custom(
+                TuiAppMessage::PathChanged(
+                    previous_config.after_migration.clone(),
+                    new_config.after_migration.clone(),
+                ),
+            )))?;
         }
 
         if previous_config.migrator_config_changed(&new_config) {
@@ -299,7 +295,7 @@ impl ConfigHandler<Conf> for ConfigStore {
 
         if self.contains_path(&events, &new_config.source) {
             self.tx
-                .blocking_send(tui_elm::Command::simple(Message::custom(
+                .blocking_send(elm_ui::Command::simple(Message::custom(
                     AppMessage::FileChanged,
                 )))?;
         }
@@ -366,10 +362,10 @@ impl ConfigStore {
     fn send_config_changed(
         &self,
         new_config: &Arc<Conf>,
-    ) -> Result<(), mpsc::error::SendError<tui_elm::Command>> {
+    ) -> Result<(), mpsc::error::SendError<Command>> {
         self.tx
-            .blocking_send(tui_elm::Command::simple(Message::custom(
-                AppMessage::ConfigChanged(slite::Config {
+            .blocking_send(Command::simple(Message::custom(AppMessage::ConfigChanged(
+                slite::Config {
                     extensions: new_config
                         .extension_dir
                         .clone()
@@ -386,8 +382,8 @@ impl ConfigStore {
                         .clone()
                         .map(read_sql_files)
                         .unwrap_or_default(),
-                }),
-            )))
+                },
+            ))))
     }
 
     fn update_log_level(&self, log_level: &Option<SerdeLevel>) {
@@ -489,7 +485,7 @@ impl App {
 
     pub async fn run(mut self) -> Result<(), Report> {
         match self.cli.command.clone() {
-            Some(Command::Completions { shell }) => {
+            Some(AppCommand::Completions { shell }) => {
                 generate(
                     shell,
                     &mut Cli::command(),
@@ -501,10 +497,10 @@ impl App {
                 let target_db = Connection::open(self.target.clone())?;
 
                 match command {
-                    Command::Migrate { migrate } => {
+                    AppCommand::Migrate { migrate } => {
                         self.handle_migrate_command(&migrate, target_db)?;
                     }
-                    Command::Print { from } => {
+                    AppCommand::Print { from } => {
                         let migrator = self.get_migrator(
                             Options {
                                 allow_deletions: true,
@@ -514,7 +510,7 @@ impl App {
                         )?;
                         self.print_schema(migrator, &from)?;
                     }
-                    Command::Diff => {
+                    AppCommand::Diff => {
                         let mut migrator = self.get_migrator(
                             Options {
                                 allow_deletions: true,
@@ -524,7 +520,7 @@ impl App {
                         )?;
                         self.write(&migrator.diff()?)?;
                     }
-                    Command::Config { config } => {
+                    AppCommand::Config { config } => {
                         self.handle_config_command(&config)?;
                     }
                     _ => {}

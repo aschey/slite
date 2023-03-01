@@ -3,6 +3,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use elm_ui::{Command, Message, Model, OptionalCommand, Program};
 use slite::{
     error::RefreshError,
     tui::{AppState, MigratorFactory, ReloadableConfig},
@@ -13,7 +14,6 @@ use std::{
 };
 use tracing_subscriber::{filter::Targets, reload::Handle, Registry};
 use tui::{backend::CrosstermBackend, Terminal};
-use tui_elm::{Model, Program};
 
 use crate::app::{Conf, ConfigStore};
 
@@ -77,33 +77,26 @@ impl<'a> Model for TuiApp<'a> {
 
     type Error = RefreshError;
 
-    fn init(&mut self) -> Result<tui_elm::OptionalCommand, Self::Error> {
+    fn init(&mut self) -> Result<OptionalCommand, Self::Error> {
         let cli_config = self.cli_config.take().unwrap();
         let reload_handle = self.reload_handle.take().unwrap();
 
-        let config_cmd = tui_elm::Command::new_blocking(|tx, _| {
+        let config_cmd = Command::new_blocking(|tx, _| {
             let handler = ConfigStore::new(cli_config, tx, reload_handle);
             let config = ReloadableConfig::new(PathBuf::from("slite.toml"), handler);
-            Some(tui_elm::Message::custom(TuiAppMessage::ConfigCreated(
-                config,
-            )))
+            Some(Message::custom(TuiAppMessage::ConfigCreated(config)))
         });
 
         let mut cmds = vec![config_cmd];
         if let Ok(Some(cmd)) = self.state.init() {
             cmds.push(cmd);
         }
-        Ok(Some(tui_elm::Command::simple(tui_elm::Message::Batch(
-            cmds,
-        ))))
+        Ok(Some(Command::simple(Message::Batch(cmds))))
     }
 
-    fn update(
-        &mut self,
-        msg: std::sync::Arc<tui_elm::Message>,
-    ) -> Result<tui_elm::OptionalCommand, Self::Error> {
+    fn update(&mut self, msg: std::sync::Arc<Message>) -> Result<OptionalCommand, Self::Error> {
         let cmd = self.state.update(msg.clone()).unwrap();
-        if let tui_elm::Message::Custom(msg) = msg.as_ref() {
+        if let Message::Custom(msg) = msg.as_ref() {
             if let Some(msg) = msg.downcast_ref::<TuiAppMessage>() {
                 match (msg, self.config.as_mut()) {
                     (TuiAppMessage::ConfigCreated(config), _) => {

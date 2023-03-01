@@ -6,6 +6,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use confique::Config;
+use elm_ui::Command;
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
 use tokio::sync::mpsc;
@@ -17,7 +18,7 @@ pub trait ConfigHandler<T: Config + Send + Sync + 'static>: Send + 'static {
         previous_config: Arc<T>,
         new_config: Arc<T>,
         events: Vec<DebouncedEvent>,
-    ) -> Result<(), mpsc::error::SendError<tui_elm::Command>>;
+    ) -> Result<(), mpsc::error::SendError<Command>>;
     fn create_config(&self, path: &Path) -> T;
     fn watch_paths(&self, path: &Path) -> Vec<PathBuf>;
 }
