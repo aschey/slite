@@ -47,7 +47,7 @@ impl<'a> StatefulWidget for App<'a> {
             .split(area);
 
         let block = Block::default().style(Style::default());
-        Widget::render(block, area, buf);
+        block.render(area, buf);
 
         let titles = state
             .titles
@@ -67,7 +67,7 @@ impl<'a> StatefulWidget for App<'a> {
                     .add_modifier(Modifier::BOLD)
                     .bg(Color::Black),
             );
-        Widget::render(tabs, chunks[0], buf);
+        tabs.render(chunks[0], buf);
 
         match state.index {
             0 => state.source_schema.view(&mut (chunks[1], buf)).unwrap(),
@@ -118,32 +118,23 @@ impl<'a> AppState<'a> {
     }
 
     pub fn refresh(&mut self) -> Result<(), RefreshError> {
-        self.migration
-            .migrator_factory()
+        let migrator_factory = self.migration.migrator_factory();
+        migrator_factory
             .update_schemas()
             .map_err(RefreshError::InitializationFailure)?;
-        let schema = self.migration.migrator_factory().metadata();
+        let schema = migrator_factory.metadata();
 
-        let selected_source = self.source_schema.selected_item();
-        self.source_schema =
-            SqlState::schema(schema.source.clone()).map_err(RefreshError::SqlFormatFailure)?;
-        if let Some(selected_source) = selected_source {
-            self.source_schema.select(&selected_source);
-        }
+        self.source_schema
+            .refresh_schema(schema.source.clone())
+            .map_err(RefreshError::SqlFormatFailure)?;
 
-        let selected_target = self.target_schema.selected_item();
-        self.target_schema =
-            SqlState::schema(schema.target.clone()).map_err(RefreshError::SqlFormatFailure)?;
-        if let Some(selected_target) = selected_target {
-            self.target_schema.select(&selected_target);
-        }
+        self.target_schema
+            .refresh_schema(schema.target.clone())
+            .map_err(RefreshError::SqlFormatFailure)?;
 
-        let selected_diff = self.diff_schema.selected_item();
-        self.diff_schema =
-            SqlState::diff(schema.clone()).map_err(RefreshError::SqlFormatFailure)?;
-        if let Some(selected_diff) = selected_diff {
-            self.diff_schema.select(&selected_diff);
-        }
+        self.diff_schema
+            .refresh_diff(schema.clone())
+            .map_err(RefreshError::SqlFormatFailure)?;
 
         Ok(())
     }

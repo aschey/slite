@@ -47,47 +47,40 @@ impl<'a> StatefulWidget for MigrationView<'a> {
             .constraints([Constraint::Length(21), Constraint::Min(0)])
             .split(area);
 
-        Widget::render(
-            Paragraph::new(vec![
-                Button::new("     Dry Run     ")
-                    .fg(Color::Blue)
-                    .selected(state.selected == 0)
-                    .enabled(state.controls_enabled)
-                    .build(),
-                Spans::from(""),
-                Button::new(" Generate Script ")
-                    .fg(Color::Blue)
-                    .selected(state.selected == 1)
-                    .enabled(state.controls_enabled)
-                    .build(),
-                Spans::from(""),
-                Button::new("     Migrate     ")
-                    .fg(Color::Yellow)
-                    .selected(state.selected == 2)
-                    .enabled(state.controls_enabled)
-                    .build(),
-                Spans::from(""),
-                Button::new("  Clear Output   ")
-                    .fg(Color::Magenta)
-                    .selected(state.selected == 3)
-                    .enabled(state.controls_enabled)
-                    .build(),
-            ])
-            .alignment(Alignment::Center)
-            .block(state.bipanel_state.left_block("Controls")),
-            chunks[0],
-            buf,
-        );
+        Paragraph::new(vec![
+            Button::new("     Dry Run     ")
+                .fg(Color::Blue)
+                .selected(state.selected == 0)
+                .enabled(state.controls_enabled)
+                .build(),
+            Spans::from(""),
+            Button::new(" Generate Script ")
+                .fg(Color::Blue)
+                .selected(state.selected == 1)
+                .enabled(state.controls_enabled)
+                .build(),
+            Spans::from(""),
+            Button::new("     Migrate     ")
+                .fg(Color::Yellow)
+                .selected(state.selected == 2)
+                .enabled(state.controls_enabled)
+                .build(),
+            Spans::from(""),
+            Button::new("  Clear Output   ")
+                .fg(Color::Magenta)
+                .selected(state.selected == 3)
+                .enabled(state.controls_enabled)
+                .build(),
+        ])
+        .alignment(Alignment::Center)
+        .block(state.bipanel_state.left_block("Controls"))
+        .render(chunks[0], buf);
 
-        StatefulWidget::render(
-            Scrollable::new(
-                Paragraph::new(state.formatted_logs.clone())
-                    .block(state.bipanel_state.right_block(&state.log_title())),
-            ),
-            chunks[1],
-            buf,
-            &mut state.scroller,
-        );
+        Scrollable::new(
+            Paragraph::new(state.formatted_logs.clone())
+                .block(state.bipanel_state.right_block(&state.log_title())),
+        )
+        .render(chunks[1], buf, &mut state.scroller);
 
         if state.show_popup {
             let text = Paragraph::new(vec![
@@ -138,10 +131,10 @@ impl<'a> StatefulWidget for MigrationView<'a> {
                 .constraints([Constraint::Min(0), Constraint::Length(1)])
                 .split(area);
 
-            Widget::render(Clear, area, buf);
-            Widget::render(block, area, buf);
-            Widget::render(text, popup_chunks[0], buf);
-            Widget::render(buttons, popup_chunks[1], buf);
+            Clear.render(area, buf);
+            block.render(area, buf);
+            text.render(popup_chunks[0], buf);
+            buttons.render(popup_chunks[1], buf);
         }
     }
 }
@@ -428,7 +421,7 @@ impl<'a> Model for MigrationState<'a> {
     }
 
     fn view(&self, (rect, buf): &mut Self::Writer) -> Result<(), Self::Error> {
-        StatefulWidget::render(MigrationView::default(), *rect, buf, &mut self.clone());
+        MigrationView::default().render(*rect, buf, &mut self.clone());
         Ok(())
     }
 }

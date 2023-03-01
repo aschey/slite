@@ -30,7 +30,9 @@ impl<'a> StatefulWidget for Scrollable<'a> {
             state.scroll_position = state.content_height - area_height;
         }
 
-        Widget::render(self.paragraph.scroll((state.scroll_position, 0)), area, buf);
+        self.paragraph
+            .scroll((state.scroll_position, 0))
+            .render(area, buf);
     }
 }
 

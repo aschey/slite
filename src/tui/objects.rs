@@ -30,14 +30,10 @@ impl<'a> StatefulWidget for Objects<'a> {
     ) {
         let items: Vec<ListItem> = state.objects.iter().map(|i| i.clone().into()).collect();
 
-        tui::widgets::StatefulWidget::render(
-            List::new(items)
-                .highlight_style(Style::default().fg(Color::Green).bg(Color::Black))
-                .block(self.block),
-            area,
-            buf,
-            &mut state.state,
-        );
+        List::new(items)
+            .highlight_style(Style::default().fg(Color::Green).bg(Color::Black))
+            .block(self.block)
+            .render(area, buf, &mut state.state);
     }
 }
 

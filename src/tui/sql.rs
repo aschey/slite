@@ -37,30 +37,25 @@ impl<'a> StatefulWidget for SqlView<'a> {
             ])
             .split(area);
 
-        StatefulWidget::render(
-            Objects::new(state.bipanel_state.left_block("Objects")),
+        Objects::new(state.bipanel_state.left_block("Objects")).render(
             chunks[0],
             buf,
             &mut state.state,
         );
 
         if !state.sql.is_empty() {
-            StatefulWidget::render(
-                Scrollable::new(
-                    Paragraph::new(
-                        state
-                            .sql
-                            .get(state.state.selected_index())
-                            .expect("Selected index out of bounds")
-                            .clone(),
-                    )
-                    .wrap(Wrap { trim: false })
-                    .block(state.bipanel_state.right_block("SQL")),
-                ),
-                chunks[1],
-                buf,
-                &mut state.scroller,
-            );
+            Scrollable::new(
+                Paragraph::new(
+                    state
+                        .sql
+                        .get(state.state.selected_index())
+                        .expect("Selected index out of bounds")
+                        .clone(),
+                )
+                .wrap(Wrap { trim: false })
+                .block(state.bipanel_state.right_block("SQL")),
+            )
+            .render(chunks[1], buf, &mut state.scroller);
         }
     }
 }
@@ -184,6 +179,26 @@ impl<'a> SqlState<'a> {
         self.state.select(item);
     }
 
+    pub fn refresh_schema(&mut self, metadata: Metadata) -> Result<(), SqlFormatError> {
+        let selected = self.selected_item();
+        let mut new_state = SqlState::schema(metadata)?;
+        if let Some(selected) = selected {
+            new_state.select(&selected);
+        }
+        std::mem::swap(self, &mut new_state);
+        Ok(())
+    }
+
+    pub fn refresh_diff(&mut self, metadata: MigrationMetadata) -> Result<(), SqlFormatError> {
+        let selected = self.selected_item();
+        let mut new_state = SqlState::diff(metadata)?;
+        if let Some(selected) = selected {
+            new_state.select(&selected);
+        }
+        std::mem::swap(self, &mut new_state);
+        Ok(())
+    }
+
     #[cfg(feature = "crossterm-events")]
     pub fn handle_event(&mut self, event: &crossterm::event::Event) {
         use crossterm::event::{Event, KeyCode, KeyEventKind};
@@ -241,18 +256,14 @@ impl<'a> Model for SqlState<'a> {
         Ok(None)
     }
     fn update(&mut self, msg: Arc<Message>) -> Result<OptionalCommand, Self::Error> {
-        match msg.as_ref() {
-            Message::TermEvent(msg) => {
-                self.handle_event(msg);
-            }
-            Message::Custom(msg) => {}
-            _ => {}
+        if let Message::TermEvent(msg) = msg.as_ref() {
+            self.handle_event(msg);
         }
         Ok(None)
     }
 
     fn view(&self, (rect, buf): &mut Self::Writer) -> Result<(), Self::Error> {
-        StatefulWidget::render(SqlView::default(), *rect, buf, &mut self.clone());
+        SqlView::default().render(*rect, buf, &mut self.clone());
         Ok(())
     }
 }

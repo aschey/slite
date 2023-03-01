@@ -21,8 +21,7 @@ color-eyre = {version = "0.6.2", optional = true}
 confique = {version = "0.2.2", default-features = false, features = ["toml"], optional = true}
 content_inspector = {version = "0.2.4", optional = true}
 crossterm = {version = "0.25", optional = true}
-elm-ui = {path = "../elm-ui-rs", optional = true}
-#{git = "https://github.com/aschey/elm-ui-rs", rev = "288e671ac409b9ea1542106050f44fbcd66b6189", optional = true}
+elm-ui = {git = "https://github.com/aschey/elm-ui-rs", rev = "c89287e70b71fd8543fc02c6eb16347b43e1bca5", optional = true}
 futures = {version = "0.3.26", optional = true}
 ignore = {version = "0.4.20", optional = true}
 imara-diff = {version = "0.1", optional = true}
