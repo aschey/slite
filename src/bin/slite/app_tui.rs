@@ -9,11 +9,15 @@ use slite::{
     tui::{AppState, MigratorFactory, ReloadableConfig},
 };
 use std::{
-    io::{self, Stdout},
+    io::{self},
+    marker::PhantomData,
     path::PathBuf,
 };
 use tracing_subscriber::{filter::Targets, reload::Handle, Registry};
-use tui::{backend::CrosstermBackend, Terminal};
+use tui::{
+    backend::{Backend, CrosstermBackend},
+    Terminal,
+};
 
 use crate::app::{Conf, ConfigStore};
 
@@ -24,24 +28,27 @@ pub enum TuiAppMessage {
     ConfigCreated(ReloadableConfig<Conf>),
 }
 
-struct TuiApp<'a> {
+#[derive(Debug)]
+struct TuiApp<'a, B: Backend> {
     state: AppState<'a>,
     reload_handle: Option<Handle<Targets, Registry>>,
     cli_config: Option<Conf>,
     config: Option<ReloadableConfig<Conf>>,
+    _phantom: PhantomData<B>,
 }
 
-impl<'a> TuiApp<'a> {
+impl<'a, B: Backend> TuiApp<'a, B> {
     fn new(
         migrator_factory: MigratorFactory,
         reload_handle: Handle<Targets, Registry>,
         cli_config: Conf,
-    ) -> Result<TuiApp<'a>, Report> {
+    ) -> Result<TuiApp<'a, B>, Report> {
         Ok(TuiApp {
             state: AppState::new(migrator_factory)?,
             reload_handle: Some(reload_handle),
             cli_config: Some(cli_config),
             config: None,
+            _phantom: Default::default(),
         })
     }
 }
@@ -72,8 +79,8 @@ pub async fn run_tui(
     Ok(())
 }
 
-impl<'a> Model for TuiApp<'a> {
-    type Writer = Terminal<CrosstermBackend<Stdout>>;
+impl<'a, B: Backend> Model for TuiApp<'a, B> {
+    type Writer = Terminal<B>;
 
     type Error = RefreshError;
 
@@ -139,3 +146,7 @@ impl<'a> Model for TuiApp<'a> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "./app_tui_test.rs"]
+mod app_tui_test;

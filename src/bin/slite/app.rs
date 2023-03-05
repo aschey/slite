@@ -64,7 +64,7 @@ enum AppCommand {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SerdeRegex(#[serde(with = "serde_regex")] Regex);
+pub struct SerdeRegex(#[serde(with = "serde_regex")] pub(crate) Regex);
 
 impl PartialEq for SerdeRegex {
     fn eq(&self, other: &Self) -> bool {
@@ -163,7 +163,7 @@ impl<'a> MakeWriter<'a> for PagerWrapper {
     }
 }
 
-#[derive(Debug, Clone, Args, confique::Config, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, confique::Config, Serialize, Deserialize)]
 pub struct Conf {
     #[arg(short, long, value_parser = source_parser)]
     pub source: Option<PathBuf>,
@@ -370,6 +370,7 @@ impl ConfigStore {
                         .extension_dir
                         .clone()
                         .map(read_extension_dir)
+                        .unwrap()
                         .unwrap_or_default(),
                     ignore: new_config.ignore.clone().map(|r| r.0),
                     before_migration: new_config
@@ -441,6 +442,7 @@ impl App {
         let extensions = conf
             .extension_dir
             .map(read_extension_dir)
+            .unwrap()
             .unwrap_or_default();
 
         let ignore = conf.ignore.map(|i| i.0);

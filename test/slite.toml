@@ -1,0 +1,8 @@
+after_migration = "./test/post-migration"
+before_migration = "./test/pre-migration"
+extension_dir = "./demo/extensions"
+ignore = "(search_spellfix_vocab.*)|(search_index_.*)"
+log_level = "debug"
+pager = false
+source = "./test/schema"
+target = "./test/test.db"

@@ -383,12 +383,16 @@ impl<'a> Model for MigrationState<'a> {
     type Error = SqlFormatError;
 
     fn init(&mut self) -> Result<OptionalCommand, Self::Error> {
-        Ok(Some(Command::new_async(|_, _| async move {
-            let log_stream = BroadcastStream::new(BroadcastWriter::default().receiver());
-            Some(Message::Stream(Box::pin(log_stream.map(|log| {
-                Message::custom(MigrationMessage::Log(log.unwrap()))
-            }))))
-        })))
+        Ok(Some(Command::new_async(
+            |_, cancellation_token| async move {
+                let log_stream = BroadcastStream::new(BroadcastWriter::default().receiver());
+                Some(Message::Stream(Box::pin(
+                    log_stream
+                        .map(|log| Message::custom(MigrationMessage::Log(log.unwrap())))
+                        .take_until(cancellation_token.cancelled_owned()),
+                )))
+            },
+        )))
     }
 
     fn update(&mut self, msg: Arc<Message>) -> Result<OptionalCommand, Self::Error> {

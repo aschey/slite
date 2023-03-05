@@ -1,5 +1,8 @@
 const MAX_PEEK_SIZE: usize = 1024;
-use std::{io::Read, path::PathBuf};
+use std::{
+    io::{self, Read},
+    path::PathBuf,
+};
 
 use ignore::WalkBuilder;
 
@@ -26,8 +29,14 @@ pub fn read_sql_files(sql_dir: impl AsRef<std::path::Path>) -> Vec<String> {
         .collect()
 }
 
-pub fn read_extension_dir(extension_dir: impl Into<PathBuf>) -> Vec<PathBuf> {
+pub fn read_extension_dir(extension_dir: impl Into<PathBuf>) -> Result<Vec<PathBuf>, io::Error> {
     let extension_dir = extension_dir.into();
+    if !extension_dir.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Directory {extension_dir:?} does not exist"),
+        ));
+    }
     let os_dir = std::env::consts::OS;
     let os_dir = extension_dir.join(os_dir);
     let paths: Vec<_> = WalkBuilder::new(extension_dir)
@@ -39,7 +48,7 @@ pub fn read_extension_dir(extension_dir: impl Into<PathBuf>) -> Vec<PathBuf> {
         .filter_map(|r| r.ok().map(|d| d.path().to_path_buf()))
         .collect();
 
-    paths
+    Ok(paths
         .iter()
         .filter_map(|p| {
             if p.is_file() {
@@ -58,7 +67,7 @@ pub fn read_extension_dir(extension_dir: impl Into<PathBuf>) -> Vec<PathBuf> {
             }
             None
         })
-        .collect()
+        .collect())
 }
 
 #[cfg(feature = "read-files")]

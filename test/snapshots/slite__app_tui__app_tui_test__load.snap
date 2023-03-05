@@ -1,0 +1,35 @@
+---
+source: src/bin/slite/./app_tui_test.rs
+expression: view
+---
+                                                                                
+ ╭────────────────────────────────────────────────────────────────────────────╮ 
+ │ Source │ Target │ Diff │ Migrate                                           │ 
+ ╰────────────────────────────────────────────────────────────────────────────╯ 
+ ╭Objects─────────────────────╮╭SQL───────────────────────────────────────────╮ 
+ │Tables                      ││CREATE TABLE album (                          │ 
+ │  album                     ││ album_id INTEGER PRIMARY KEY NOT NULL,       │ 
+ │  album_artist              ││ album_name TEXT NOT NULL COLLATE NOCASE,     │ 
+ │  artist                    ││ album_artist_id INTEGER NOT NULL,            │ 
+ │  search_index              ││ created_date INTEGER NOT NULL,               │ 
+ │  search_spellfix           ││ UNIQUE(album_name, album_artist_id) FOREIGN  │ 
+ │  search_vocab              ││KEY(album_artist_id) REFERENCES               │ 
+ │  song                      ││album_artist(album_artist_id)                 │ 
+ │Indexes                     ││)                                             │ 
+ │  idx_song_path             ││                                              │ 
+ │Views                       ││                                              │ 
+ │  vw_all                    ││                                              │ 
+ │Triggers                    ││                                              │ 
+ │  after_album_artist_delete ││                                              │ 
+ │  after_album_artist_insert ││                                              │ 
+ │  after_album_artist_update ││                                              │ 
+ │  after_album_delete        ││                                              │ 
+ │  after_album_insert        ││                                              │ 
+ │  after_album_update        ││                                              │ 
+ │  after_artist_delete       ││                                              │ 
+ │  after_artist_insert       ││                                              │ 
+ │  after_artist_update       ││                                              │ 
+ │  after_song_delete         ││                                              │ 
+ ╰────────────────────────────╯╰──────────────────────────────────────────────╯ 
+                                                                                
+

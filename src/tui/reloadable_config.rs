@@ -1,4 +1,5 @@
 use std::{
+    fmt::Debug,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
@@ -24,13 +25,23 @@ pub trait ConfigHandler<T: Config + Send + Sync + 'static>: Send + 'static {
 }
 
 #[derive(Clone)]
-pub struct ReloadableConfig<T: Config + Send + Sync + 'static> {
+pub struct ReloadableConfig<T: Config + Debug + Send + Sync + 'static> {
     current_config: Arc<ArcSwap<T>>,
     cached_config: Arc<ArcSwap<T>>,
     debouncer: Arc<Mutex<Debouncer<RecommendedWatcher>>>,
 }
 
-impl<T: Config + Send + Sync + 'static> ReloadableConfig<T> {
+impl<T: Config + Debug + Send + Sync + 'static> Debug for ReloadableConfig<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReloadableConfig")
+            .field("current_config", &self.current_config)
+            .field("cached_config", &self.cached_config)
+            .field("debouncer", &"<debouncer>")
+            .finish()
+    }
+}
+
+impl<T: Config + Debug + Send + Sync + 'static> ReloadableConfig<T> {
     pub fn new(path: PathBuf, mut handler: impl ConfigHandler<T>) -> Self {
         let paths = handler.watch_paths(&path);
         let cached_config = Arc::new(ArcSwap::new(Arc::new(handler.create_config(&path))));
