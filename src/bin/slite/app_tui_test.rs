@@ -1,9 +1,6 @@
-use std::path::PathBuf;
-
 use crate::{app::Conf, app_tui::TuiApp};
 use confique::Config;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use elm_ui::Message;
 use elm_ui_tester::{TerminalView, UiTester};
 use slite::{
     read_extension_dir, read_sql_files,
@@ -13,130 +10,132 @@ use tempfile::TempDir;
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::{filter::Targets, prelude::*, reload, Layer, Registry};
 use tracing_tree2::HierarchicalLayer;
-use tui::{backend::TestBackend, style::Color, Terminal};
+use tui::{backend::TestBackend, buffer::Buffer, style::Color, Terminal};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_load() {
-    let backend = TestBackend::new(80, 30);
-    let terminal = Terminal::new(backend).unwrap();
-    let (app, _tempdir) = setup();
-
-    let tester = UiTester::new_tui(app, terminal);
+    let (tester, _tempdir) = setup(30);
     tester
         .wait_for(|term| {
             term.terminal_view().contains("album") && term.get(5, 6).fg == Color::Green
         })
         .await
         .unwrap();
-
     tester
-        .send_msg(Message::TermEvent(crossterm::event::Event::Key(
-            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()),
-        )))
+        .send_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()))
         .await;
     let (_, view) = tester.wait_for_completion().unwrap();
     let view = view.terminal_view();
-    let mut settings = insta::Settings::clone_current();
-    settings.set_snapshot_path("../../../test/snapshots");
-    settings.bind(|| {
+    insta::with_settings!({
+        snapshot_path => "../../../test/snapshots"
+    }, {
         insta::assert_snapshot!(view);
     });
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_scroll_down() {
-    let backend = TestBackend::new(80, 30);
-    let terminal = Terminal::new(backend).unwrap();
-    let (app, _tempdir) = setup();
-
-    let tester = UiTester::new(app, terminal, |o| o.backend().buffer().to_owned());
+    let (tester, _tempdir) = setup(30);
     tester
         .wait_for(|term| term.get(5, 6).fg == Color::Green)
         .await
         .unwrap();
-
     tester
-        .send_msg(Message::TermEvent(crossterm::event::Event::Key(
-            KeyEvent::new(KeyCode::Down, KeyModifiers::empty()),
-        )))
+        .send_key(KeyEvent::new(KeyCode::Down, KeyModifiers::empty()))
         .await;
-
     tester
         .wait_for(|term| term.get(6, 6).fg == Color::Green)
         .await
         .unwrap();
-
     tester
-        .send_msg(Message::TermEvent(crossterm::event::Event::Key(
-            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()),
-        )))
+        .send_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()))
         .await;
-
     let (_, view) = tester.wait_for_completion().unwrap();
     let view = view.terminal_view();
-    let mut settings = insta::Settings::clone_current();
-    settings.set_snapshot_path("../../../test/snapshots");
-    settings.bind(|| {
+    insta::with_settings!({
+        snapshot_path => "../../../test/snapshots"
+    }, {
         insta::assert_snapshot!(view);
     });
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_view_target() {
-    let backend = TestBackend::new(80, 30);
-    let terminal = Terminal::new(backend).unwrap();
-    let (app, _tempdir) = setup();
-
-    let tester = UiTester::new(app, terminal, |o| o.backend().buffer().to_owned());
+    let (tester, _tempdir) = setup(30);
     tester
-        .send_msg(Message::TermEvent(crossterm::event::Event::Key(
-            KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()),
-        )))
+        .send_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()))
         .await;
-
     tester
         .wait_for(|term| term.get(13, 2).bg == Color::Black)
         .await
         .unwrap();
-
     tester
-        .send_msg(Message::TermEvent(crossterm::event::Event::Key(
-            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()),
-        )))
+        .send_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()))
         .await;
-
     let (_, view) = tester.wait_for_completion().unwrap();
     let view = view.terminal_view();
-    let mut settings = insta::Settings::clone_current();
-    settings.set_snapshot_path("../../../test/snapshots");
-    settings.bind(|| {
+    insta::with_settings!({
+        snapshot_path => "../../../test/snapshots"
+    }, {
         insta::assert_snapshot!(view);
     });
 }
 
-fn setup<'a>() -> (TuiApp<'a, TestBackend>, TempDir) {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_dry_run() {
+    let (tester, _tempdir) = setup(60);
+    for _ in 0..3 {
+        tester
+            .send_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()))
+            .await;
+    }
+    tester
+        .wait_for(|term| term.terminal_view().contains("Controls"))
+        .await
+        .unwrap();
+    tester
+        .send_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()))
+        .await;
+    tester
+        .wait_for(|term| term.terminal_view().contains("Migration completed"))
+        .await
+        .unwrap();
+    tester
+        .send_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()))
+        .await;
+    let (_, view) = tester.wait_for_completion().unwrap();
+    let view = view.terminal_view();
+
+    insta::with_settings!({
+        snapshot_path => "../../../test/snapshots",
+        filters => vec![(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", "yyyy-mm-dd hh:mm:dd")]
+    }, {
+        insta::assert_snapshot!(view);
+    });
+}
+
+fn setup<'a>(height: u16) -> (UiTester<TuiApp<'a, TestBackend>, Buffer>, TempDir) {
     let (filter, reload_handle) =
         reload::Layer::new(Targets::default().with_target("slite", LevelFilter::INFO));
-
     Registry::default()
         .with(
             HierarchicalLayer::default()
                 .with_writer(BroadcastWriter::default())
+                .with_timestamps(false)
                 .with_indent_lines(true)
                 .with_level(false)
                 .with_filter(filter),
         )
         .try_init()
         .ok();
-
-    let conf = Conf::builder().file("./test/slite.toml").load().unwrap();
-
+    let mut conf = Conf::builder().file("./test/slite.toml").load().unwrap();
     let extensions = conf
         .extension_dir
         .map(read_extension_dir)
         .unwrap()
         .unwrap_or_default();
-
+    let tempdir = tempfile::tempdir().unwrap();
+    conf.target = Some(tempdir.path().join("test.db"));
     let ignore = conf.ignore.map(|i| i.0);
     let before_migration = conf
         .before_migration
@@ -149,18 +148,14 @@ fn setup<'a>() -> (TuiApp<'a, TestBackend>, TempDir) {
         before_migration,
         after_migration,
     };
-
-    let tempdir = tempfile::tempdir().unwrap();
     let app = TuiApp::<TestBackend>::new(
-        MigratorFactory::new(
-            PathBuf::from("./test"),
-            tempdir.path().join("test.db"),
-            config,
-        )
-        .unwrap(),
+        MigratorFactory::new(conf.source.unwrap(), conf.target.unwrap(), config).unwrap(),
         reload_handle,
         Conf::default(),
     )
     .unwrap();
-    (app, tempdir)
+    let backend = TestBackend::new(80, height);
+    let terminal = Terminal::new(backend).unwrap();
+    let tester = UiTester::new_tui(app, terminal);
+    (tester, tempdir)
 }
