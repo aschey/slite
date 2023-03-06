@@ -10,5 +10,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: cache-${{ hashFiles('**/Cargo.toml') }}
+      - name: Minimal build
+        run: cargo build --no-default-features
+      - name: Clippy
+        run: cargo clippy
       - name: Test
         run: cargo test

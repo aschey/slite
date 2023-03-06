@@ -12,6 +12,7 @@ mod unified_diff_builder;
 pub use diff::*;
 #[cfg(feature = "read-files")]
 mod read_files;
+#[cfg(feature = "read-files")]
 pub use read_files::*;
 mod color;
 #[cfg(feature = "tui")]
