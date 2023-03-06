@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use crate::{app::Conf, app_tui::TuiApp};
 use confique::Config;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use elm_tui_tester::{terminal_view, TuiTester};
 use elm_ui::Message;
+use elm_ui_tester::{TerminalView, UiTester};
 use slite::{
     read_extension_dir, read_sql_files,
     tui::{BroadcastWriter, MigratorFactory},
@@ -21,9 +21,11 @@ async fn test_load() {
     let terminal = Terminal::new(backend).unwrap();
     let (app, _tempdir) = setup();
 
-    let tester = TuiTester::new(app, terminal);
+    let tester = UiTester::new_tui(app, terminal);
     tester
-        .wait_for(|term| terminal_view(term).contains("album") && term.get(5, 6).fg == Color::Green)
+        .wait_for(|term| {
+            term.terminal_view().contains("album") && term.get(5, 6).fg == Color::Green
+        })
         .await
         .unwrap();
 
@@ -33,7 +35,7 @@ async fn test_load() {
         )))
         .await;
     let (_, view) = tester.wait_for_completion().unwrap();
-    let view = terminal_view(&view);
+    let view = view.terminal_view();
     let mut settings = insta::Settings::clone_current();
     settings.set_snapshot_path("../../../test/snapshots");
     settings.bind(|| {
@@ -47,9 +49,9 @@ async fn test_scroll_down() {
     let terminal = Terminal::new(backend).unwrap();
     let (app, _tempdir) = setup();
 
-    let tester = TuiTester::new(app, terminal);
+    let tester = UiTester::new(app, terminal, |o| o.backend().buffer().to_owned());
     tester
-        .wait_for(|term| terminal_view(term).contains("album") && term.get(5, 6).fg == Color::Green)
+        .wait_for(|term| term.get(5, 6).fg == Color::Green)
         .await
         .unwrap();
 
@@ -71,7 +73,7 @@ async fn test_scroll_down() {
         .await;
 
     let (_, view) = tester.wait_for_completion().unwrap();
-    let view = terminal_view(&view);
+    let view = view.terminal_view();
     let mut settings = insta::Settings::clone_current();
     settings.set_snapshot_path("../../../test/snapshots");
     settings.bind(|| {
@@ -85,7 +87,7 @@ async fn test_view_target() {
     let terminal = Terminal::new(backend).unwrap();
     let (app, _tempdir) = setup();
 
-    let tester = TuiTester::new(app, terminal);
+    let tester = UiTester::new(app, terminal, |o| o.backend().buffer().to_owned());
     tester
         .send_msg(Message::TermEvent(crossterm::event::Event::Key(
             KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()),
@@ -104,7 +106,7 @@ async fn test_view_target() {
         .await;
 
     let (_, view) = tester.wait_for_completion().unwrap();
-    let view = terminal_view(&view);
+    let view = view.terminal_view();
     let mut settings = insta::Settings::clone_current();
     settings.set_snapshot_path("../../../test/snapshots");
     settings.bind(|| {

@@ -22,7 +22,7 @@ confique = {version = "0.2.2", default-features = false, features = ["toml"], op
 content_inspector = {version = "0.2.4", optional = true}
 crossterm = {version = "0.25", optional = true}
 #elm-ui = {path = "../elm-ui-rs/crates/elm-ui", optional = true}
-elm-ui = {git = "https://github.com/aschey/elm-ui-rs", rev = "53ecaeba8a6b23b861d68c7e742189a2fe5c38c4", optional = true, features = ["crossterm"]}
+elm-ui = {git = "https://github.com/aschey/elm-ui-rs", rev = "f28ddafaf34b694893c6c2d56e5c2c4958e81465", optional = true, features = ["crossterm"]}
 futures = {version = "0.3.26", optional = true}
 ignore = {version = "0.4.20", optional = true}
 imara-diff = {version = "0.1", optional = true}
@@ -86,8 +86,8 @@ tui = [
 ]
 
 [dev-dependencies]
-elm-tui-tester = {git = "https://github.com/aschey/elm-ui-rs", rev = "53ecaeba8a6b23b861d68c7e742189a2fe5c38c4"}
-#elm-tui-tester = {path = "../elm-ui-rs/crates/elm-tui-tester"}
+elm-ui-tester = {git = "https://github.com/aschey/elm-ui-rs", rev = "f28ddafaf34b694893c6c2d56e5c2c4958e81465", features = ["tui"]}
+#elm-ui-tester = {path = "../elm-ui-rs/crates/elm-ui-tester", features = ["tui"]}
 insta = "1.28.0"
 rstest = "0.16.0"
 tempfile = "3.4.0"
