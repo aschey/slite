@@ -29,9 +29,14 @@ impl<'a> StatefulWidget for Objects<'a> {
         state: &mut Self::State,
     ) {
         let items: Vec<ListItem> = state.objects.iter().map(|i| i.clone().into()).collect();
-
+        let selected_color = state.selected_color().unwrap_or(Color::Reset);
         List::new(items)
-            .highlight_style(Style::default().fg(Color::Green).bg(Color::Black))
+            .highlight_style(
+                Style::default()
+                    .fg(selected_color)
+                    .bg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            )
             .block(self.block)
             .render(area, buf, &mut state.state);
     }
@@ -206,6 +211,17 @@ impl ObjectsState {
         if let Some(selected) = self.state.selected() {
             match self.objects.get(selected).expect("Item not selected") {
                 ListItemType::Entry(entry, _) => Some(entry.to_owned()),
+                ListItemType::Header(_) => unreachable!(),
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn selected_color(&self) -> Option<Color> {
+        if let Some(selected) = self.state.selected() {
+            match self.objects.get(selected).expect("Item not selected") {
+                ListItemType::Entry(_, color) => Some(color.to_owned()),
                 ListItemType::Header(_) => unreachable!(),
             }
         } else {

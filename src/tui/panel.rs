@@ -56,14 +56,17 @@ impl BiPanelState {
         'a: 'b,
     {
         let modifier = if focused {
-            Modifier::BOLD | Modifier::ITALIC
+            Modifier::BOLD
         } else {
             Modifier::empty()
         };
-        let border_fg = if focused { Color::Green } else { Color::White };
+        let border_fg = if focused { Color::Reset } else { Color::Black };
 
         Block::default()
-            .title(Span::styled(title, Style::default().add_modifier(modifier)))
+            .title(Span::styled(
+                title,
+                Style::default().add_modifier(modifier).fg(Color::Reset),
+            ))
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(border_fg))

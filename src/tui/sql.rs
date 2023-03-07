@@ -88,6 +88,16 @@ impl<'a> SqlState<'a> {
                                 object: name.to_owned(),
                                 foreground: Color::Reset,
                             }
+                        } else if diff.original_text.is_empty() {
+                            StyledObject {
+                                object: name.to_owned(),
+                                foreground: Color::Red,
+                            }
+                        } else if diff.new_text.is_empty() {
+                            StyledObject {
+                                object: name.to_owned(),
+                                foreground: Color::Green,
+                            }
                         } else {
                             StyledObject {
                                 object: name.to_owned(),
@@ -214,7 +224,7 @@ impl<'a> SqlState<'a> {
                 match key.code {
                     KeyCode::Up => self.previous(),
                     KeyCode::Down => self.next(),
-                    KeyCode::Left | KeyCode::Right => self.toggle_focus(),
+                    KeyCode::Tab => self.toggle_focus(),
                     _ => {}
                 }
             }

@@ -40,6 +40,7 @@ impl Deref for SchemaDiff {
 pub struct Diff {
     pub diff_text: String,
     pub original_text: String,
+    pub new_text: String,
 }
 
 pub fn diff_metadata(metadata: MigrationMetadata) -> SchemaDiff {
@@ -89,6 +90,15 @@ pub fn sql_diff(source: &str, target: &str) -> Diff {
             &input,
             UnifiedDiffBuilder::new(&input),
         ),
-        original_text: SqlPrinter::default().print(source),
+        original_text: if source.is_empty() {
+            String::default()
+        } else {
+            SqlPrinter::default().print(source)
+        },
+        new_text: if target.is_empty() {
+            String::default()
+        } else {
+            SqlPrinter::default().print(target)
+        },
     }
 }

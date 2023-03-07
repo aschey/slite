@@ -3,9 +3,8 @@ source: src/bin/slite/./app_tui_test.rs
 expression: view
 ---
                                                                                 
- ╭────────────────────────────────────────────────────────────────────────────╮ 
- │ Source │ Target │ Diff │ Migrate                                           │ 
- ╰────────────────────────────────────────────────────────────────────────────╯ 
+   Source |  Target |  Diff |  Migrate                                      
+ ────────────────────────────────────────────────────────────────────────────── 
  ╭Source──────────────────────╮╭SQL───────────────────────────────────────────╮ 
  │Tables                      ││CREATE TABLE album (                          │ 
  │  album                     ││ album_id INTEGER PRIMARY KEY NOT NULL,       │ 
@@ -30,6 +29,27 @@ expression: view
  │  after_artist_insert       ││                                              │ 
  │  after_artist_update       ││                                              │ 
  │  after_song_delete         ││                                              │ 
+ │  after_song_insert         ││                                              │ 
+ │  after_song_update         ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
+ │                            ││                                              │ 
  ╰────────────────────────────╯╰──────────────────────────────────────────────╯ 
                                                                                 
 

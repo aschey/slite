@@ -43,7 +43,7 @@ impl<'a> StatefulWidget for App<'a> {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
-            .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
+            .constraints([Constraint::Length(2), Constraint::Min(0)].as_ref())
             .split(area);
 
         let block = Block::default().style(Style::default());
@@ -52,21 +52,36 @@ impl<'a> StatefulWidget for App<'a> {
         let titles = state
             .titles
             .iter()
-            .map(|t| Spans::from(vec![Span::styled(*t, Style::default().fg(Color::Green))]))
+            .enumerate()
+            .map(|(i, t)| {
+                if i as i32 == state.index {
+                    Spans::from(vec![
+                        Span::styled(t.icon, Style::default().fg(Color::Cyan)),
+                        Span::styled(
+                            t.text,
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ])
+                } else {
+                    Spans::from(vec![Span::styled(
+                        format!("{}{}", t.icon, t.text),
+                        Style::default().fg(Color::Black),
+                    )])
+                }
+            })
             .collect();
         let tabs = Tabs::new(titles)
             .block(
                 Block::default()
-                    .borders(Borders::ALL)
+                    .borders(Borders::BOTTOM)
+                    .border_style(Style::default().fg(Color::Black))
                     .border_type(BorderType::Rounded),
             )
             .select(state.index as usize)
             .style(Style::default())
-            .highlight_style(
-                Style::default()
-                    .add_modifier(Modifier::BOLD)
-                    .bg(Color::Black),
-            );
+            .divider(Span::styled("|", Style::default().fg(Color::Gray)));
         tabs.render(chunks[0], buf);
 
         match state.index {
@@ -80,8 +95,14 @@ impl<'a> StatefulWidget for App<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub struct Title<'a> {
+    icon: &'a str,
+    text: &'a str,
+}
+
+#[derive(Debug, Clone)]
 pub struct AppState<'a> {
-    pub titles: Vec<&'a str>,
+    pub titles: Vec<Title<'a>>,
     pub index: i32,
     source_schema: SqlState<'a>,
     target_schema: SqlState<'a>,
@@ -93,7 +114,24 @@ impl<'a> AppState<'a> {
     pub fn new(migrator_factory: MigratorFactory) -> Result<AppState<'a>, SqlFormatError> {
         let schema = migrator_factory.metadata();
         Ok(AppState {
-            titles: vec!["Source", "Target", "Diff", "Migrate"],
+            titles: vec![
+                Title {
+                    icon: " ",
+                    text: "Source",
+                },
+                Title {
+                    icon: " ",
+                    text: "Target",
+                },
+                Title {
+                    icon: " ",
+                    text: "Diff",
+                },
+                Title {
+                    icon: " ",
+                    text: "Migrate",
+                },
+            ],
             index: 0,
             source_schema: SqlState::schema("Source", schema.source.clone())?,
             target_schema: SqlState::schema("Target", schema.target.clone())?,
@@ -158,8 +196,12 @@ impl<'a> AppState<'a> {
             if key.kind == KeyEventKind::Press {
                 match (key.code, self.index) {
                     (KeyCode::Char('q'), _) => return Ok(ControlFlow::Quit),
-                    (KeyCode::Tab, _) => self.next_tab(),
-                    (KeyCode::BackTab, _) => self.previous_tab(),
+                    (KeyCode::Right, _) if !(self.index == 3 && self.migration.popup_active()) => {
+                        self.next_tab()
+                    }
+                    (KeyCode::Left, _) if !(self.index == 3 && self.migration.popup_active()) => {
+                        self.previous_tab()
+                    }
                     _ => {}
                 }
             }

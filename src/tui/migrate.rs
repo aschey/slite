@@ -44,12 +44,12 @@ impl<'a> StatefulWidget for MigrationView<'a> {
     ) {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(21), Constraint::Min(0)])
+            .constraints([Constraint::Length(22), Constraint::Min(0)])
             .split(area);
 
         Paragraph::new(vec![
             Spans::from(
-                Button::new("     Dry Run     ")
+                Button::new("   Dry Run         ")
                     .fg(Color::Blue)
                     .selected(state.selected == 0)
                     .enabled(state.controls_enabled)
@@ -57,7 +57,7 @@ impl<'a> StatefulWidget for MigrationView<'a> {
             ),
             Spans::from(""),
             Spans::from(
-                Button::new(" Generate Script ")
+                Button::new("   Generate Script ")
                     .fg(Color::Blue)
                     .selected(state.selected == 1)
                     .enabled(state.controls_enabled)
@@ -65,15 +65,15 @@ impl<'a> StatefulWidget for MigrationView<'a> {
             ),
             Spans::from(""),
             Spans::from(
-                Button::new("     Migrate     ")
-                    .fg(Color::Yellow)
+                Button::new("   Migrate         ")
+                    .fg(Color::Green)
                     .selected(state.selected == 2)
                     .enabled(state.controls_enabled)
                     .build(),
             ),
             Spans::from(""),
             Spans::from(
-                Button::new("  Clear Output   ")
+                Button::new("   Clear Output     ")
                     .fg(Color::Magenta)
                     .selected(state.selected == 3)
                     .enabled(state.controls_enabled)
@@ -97,13 +97,13 @@ impl<'a> StatefulWidget for MigrationView<'a> {
             ])
             .wrap(Wrap { trim: false });
             let buttons = Paragraph::new(Spans::from(vec![
-                Button::new(" Cancel ")
-                    .fg(Color::Blue)
+                Button::new("  Cancel ")
+                    .fg(Color::Yellow)
                     .selected(state.popup_button_index == 0)
                     .build(),
                 Span::from("  "),
-                Button::new(" Migrate ")
-                    .fg(Color::Yellow)
+                Button::new("  Migrate ")
+                    .fg(Color::Green)
                     .selected(state.popup_button_index == 1)
                     .build(),
                 Span::from(" "),
@@ -217,10 +217,10 @@ impl<'a> MigrationState<'a> {
                 match key.code {
                     KeyCode::Up => self.previous(),
                     KeyCode::Down => self.next(),
-                    KeyCode::Left | KeyCode::Right if self.popup_active() => {
+                    KeyCode::Left | KeyCode::Right | KeyCode::Tab if self.popup_active() => {
                         self.toggle_popup_confirm()
                     }
-                    KeyCode::Left | KeyCode::Right => self.toggle_focus(),
+                    KeyCode::Tab => self.toggle_focus(),
                     KeyCode::Enter => return self.execute(),
                     _ => {}
                 }

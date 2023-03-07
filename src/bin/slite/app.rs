@@ -432,10 +432,42 @@ impl App {
             before_migration: cli_config.before_migration,
             after_migration: cli_config.after_migration,
         };
-        let conf = Conf::builder()
-            .preloaded(partial)
-            .file("slite.toml")
-            .load()?;
+
+        let direct_path = PathBuf::from("./slite.toml");
+        let path = if direct_path.exists() {
+            Some(direct_path)
+        } else {
+            let git_root = match gix_discover::upwards_opts(
+                ".",
+                gix_discover::upwards::Options {
+                    ceiling_dirs: vec![PathBuf::from("../../../..")],
+                    ..Default::default()
+                },
+            ) {
+                Ok((gix_discover::repository::Path::LinkedWorkTree { git_dir, .. }, _)) => {
+                    Some(git_dir)
+                }
+                Ok((gix_discover::repository::Path::Repository(git_dir), _)) => Some(git_dir),
+                Ok((gix_discover::repository::Path::WorkTree(git_dir), _)) => Some(git_dir),
+                Err(_) => None,
+            };
+            match git_root {
+                Some(git_root) => {
+                    let path = git_root.join("slite.toml");
+                    if path.exists() {
+                        Some(path)
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            }
+        };
+        let mut conf_builder = Conf::builder().preloaded(partial);
+        if let Some(path) = path {
+            conf_builder = conf_builder.file(path);
+        }
+        let conf = conf_builder.load().unwrap();
 
         let source = conf.source.unwrap_or_default();
         let target = conf.target.unwrap_or_default();

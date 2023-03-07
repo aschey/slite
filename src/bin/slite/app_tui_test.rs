@@ -20,10 +20,10 @@ use tui::{
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_load() {
-    let (tester, _tempdir) = setup(80, 30);
+    let (tester, _tempdir) = setup(80, 50);
     tester
         .wait_for(|term| {
-            term.terminal_view().contains("album") && term.get(5, 6).fg == Color::Green
+            term.terminal_view().contains("album") && term.get(5, 5).bg == Color::Black
         })
         .await
         .unwrap();
@@ -41,16 +41,16 @@ async fn test_load() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_scroll_down() {
-    let (tester, _tempdir) = setup(80, 30);
+    let (tester, _tempdir) = setup(80, 50);
     tester
-        .wait_for(|term| term.get(5, 6).fg == Color::Green)
+        .wait_for(|term| term.get(5, 5).bg == Color::Black)
         .await
         .unwrap();
     tester
         .send_key(KeyEvent::new(KeyCode::Down, KeyModifiers::empty()))
         .await;
     tester
-        .wait_for(|term| term.get(6, 6).fg == Color::Green)
+        .wait_for(|term| term.get(5, 6).bg == Color::Black)
         .await
         .unwrap();
     tester
@@ -67,12 +67,12 @@ async fn test_scroll_down() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_view_target() {
-    let (tester, _tempdir) = setup(80, 30);
+    let (tester, _tempdir) = setup(80, 50);
     tester
-        .send_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()))
+        .send_key(KeyEvent::new(KeyCode::Right, KeyModifiers::empty()))
         .await;
     tester
-        .wait_for(|term| term.get(13, 2).bg == Color::Black)
+        .wait_for(|term| term.get(15, 1).fg == Color::White)
         .await
         .unwrap();
     tester
@@ -93,7 +93,7 @@ async fn test_dry_run() {
     let (tester, _tempdir) = setup(80, 60);
     for _ in 0..3 {
         tester
-            .send_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()))
+            .send_key(KeyEvent::new(KeyCode::Right, KeyModifiers::empty()))
             .await;
     }
     tester
@@ -129,12 +129,13 @@ async fn test_generate_script() {
 
     for _ in 0..3 {
         tester
-            .send_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()))
+            .send_key(KeyEvent::new(KeyCode::Right, KeyModifiers::empty()))
             .await;
     }
     tester
         .wait_for(|term| term.terminal_view().contains("Controls"))
         .await
+        .map_err(|e| e.terminal_view())
         .unwrap();
 
     tester
@@ -142,7 +143,7 @@ async fn test_generate_script() {
         .await;
 
     tester
-        .wait_for(|term| term.get(5, 7).modifier.contains(Modifier::REVERSED))
+        .wait_for(|term| term.get(5, 6).modifier.contains(Modifier::REVERSED))
         .await
         .map_err(|e| e.terminal_view())
         .unwrap();
@@ -152,7 +153,7 @@ async fn test_generate_script() {
 
     tester
         .wait_for(|term| {
-            term.get(5, 7).modifier.contains(Modifier::REVERSED)
+            term.get(5, 6).modifier.contains(Modifier::REVERSED)
                 && term
                     .terminal_view()
                     .contains("CREATE TRIGGER after_song_update")

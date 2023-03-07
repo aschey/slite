@@ -3,63 +3,63 @@ source: src/bin/slite/./app_tui_test.rs
 expression: view
 ---
                                                                                 
- ╭────────────────────────────────────────────────────────────────────────────╮ 
- │ Source │ Target │ Diff │ Migrate                                           │ 
- ╰────────────────────────────────────────────────────────────────────────────╯ 
- ╭Controls───────────╮╭Logs yyyy-mm-dd hh:mm:dd───────────────────────────────╮ 
- │      Dry Run      ││┐Starting migration                                    │ 
- │                   ││├─┐Migrating tables                                    │ 
- │  Generate Script  │││ ├─┐Creating tables                                   │ 
- │                   │││ │ ├─ Creating table album                            │ 
- │      Migrate      │││ │ ├─ Creating table album_artist                     │ 
- │                   │││ │ ├─ Creating table artist                           │ 
- │   Clear Output    │││ │ ├─ Creating table search_index                     │ 
- │                   │││ │ ├─ Creating table search_spellfix                  │ 
- │                   │││ │ ├─ Creating table search_vocab                     │ 
- │                   │││ │ ├─ Creating table song                             │ 
- │                   │││ ├─┘                                                  │ 
- │                   │││ ├─┐Dropping tables                                   │ 
- │                   │││ │ ├─ No tables to drop                               │ 
- │                   │││ ├─┘                                                  │ 
- │                   │││ ├─┐Modifying tables                                  │ 
- │                   │││ │ ├─ No tables to modify                             │ 
- │                   │││ ├─┘                                                  │ 
- │                   ││├─┘                                                    │ 
- │                   ││├─┐Migrating indexes                                   │ 
- │                   │││ ├─ No indexes to drop                                │ 
- │                   │││ ├─ Creating index idx_song_path                      │ 
- │                   │││ ├─ No indexes to update                              │ 
- │                   ││├─┘                                                    │ 
- │                   ││├─┐Migrating views                                     │ 
- │                   │││ ├─ No views to drop                                  │ 
- │                   │││ ├─ Creating view vw_all                              │ 
- │                   │││ ├─ No views to update                                │ 
- │                   ││├─┘                                                    │ 
- │                   ││├─┐Migrating triggers                                  │ 
- │                   │││ ├─ No triggers to drop                               │ 
- │                   │││ ├─ Creating trigger after_album_artist_delete        │ 
- │                   │││ ├─ Creating trigger after_album_artist_insert        │ 
- │                   │││ ├─ Creating trigger after_album_artist_update        │ 
- │                   │││ ├─ Creating trigger after_album_delete               │ 
- │                   │││ ├─ Creating trigger after_album_insert               │ 
- │                   │││ ├─ Creating trigger after_album_update               │ 
- │                   │││ ├─ Creating trigger after_artist_delete              │ 
- │                   │││ ├─ Creating trigger after_artist_insert              │ 
- │                   │││ ├─ Creating trigger after_artist_update              │ 
- │                   │││ ├─ Creating trigger after_song_delete                │ 
- │                   │││ ├─ Creating trigger after_song_insert                │ 
- │                   │││ ├─ Creating trigger after_song_update                │ 
- │                   │││ ├─ No triggers to update                             │ 
- │                   ││├─┘                                                    │ 
- │                   ││├─ Migration completed                                 │ 
- │                   ││┘                                                      │ 
- │                   ││                                                       │ 
- │                   ││                                                       │ 
- │                   ││                                                       │ 
- │                   ││                                                       │ 
- │                   ││                                                       │ 
- │                   ││                                                       │ 
- │                   ││                                                       │ 
- ╰───────────────────╯╰───────────────────────────────────────────────────────╯ 
+   Source |  Target |  Diff |  Migrate                                      
+ ────────────────────────────────────────────────────────────────────────────── 
+ ╭Controls────────────╮╭Logs yyyy-mm-dd hh:mm:dd──────────────────────────────╮ 
+ │   Dry Run         ││┐Starting migration                                   │ 
+ │                    ││├─┐Migrating tables                                   │ 
+ │   Generate Script │││ ├─┐Creating tables                                  │ 
+ │                    │││ │ ├─ Creating table album                           │ 
+ │   Migrate         │││ │ ├─ Creating table album_artist                    │ 
+ │                    │││ │ ├─ Creating table artist                          │ 
+ │   Clear Output    │││ │ ├─ Creating table search_index                    │ 
+ │                    │││ │ ├─ Creating table search_spellfix                 │ 
+ │                    │││ │ ├─ Creating table search_vocab                    │ 
+ │                    │││ │ ├─ Creating table song                            │ 
+ │                    │││ ├─┘                                                 │ 
+ │                    │││ ├─┐Dropping tables                                  │ 
+ │                    │││ │ ├─ No tables to drop                              │ 
+ │                    │││ ├─┘                                                 │ 
+ │                    │││ ├─┐Modifying tables                                 │ 
+ │                    │││ │ ├─ No tables to modify                            │ 
+ │                    │││ ├─┘                                                 │ 
+ │                    ││├─┘                                                   │ 
+ │                    ││├─┐Migrating indexes                                  │ 
+ │                    │││ ├─ No indexes to drop                               │ 
+ │                    │││ ├─ Creating index idx_song_path                     │ 
+ │                    │││ ├─ No indexes to update                             │ 
+ │                    ││├─┘                                                   │ 
+ │                    ││├─┐Migrating views                                    │ 
+ │                    │││ ├─ No views to drop                                 │ 
+ │                    │││ ├─ Creating view vw_all                             │ 
+ │                    │││ ├─ No views to update                               │ 
+ │                    ││├─┘                                                   │ 
+ │                    ││├─┐Migrating triggers                                 │ 
+ │                    │││ ├─ No triggers to drop                              │ 
+ │                    │││ ├─ Creating trigger after_album_artist_delete       │ 
+ │                    │││ ├─ Creating trigger after_album_artist_insert       │ 
+ │                    │││ ├─ Creating trigger after_album_artist_update       │ 
+ │                    │││ ├─ Creating trigger after_album_delete              │ 
+ │                    │││ ├─ Creating trigger after_album_insert              │ 
+ │                    │││ ├─ Creating trigger after_album_update              │ 
+ │                    │││ ├─ Creating trigger after_artist_delete             │ 
+ │                    │││ ├─ Creating trigger after_artist_insert             │ 
+ │                    │││ ├─ Creating trigger after_artist_update             │ 
+ │                    │││ ├─ Creating trigger after_song_delete               │ 
+ │                    │││ ├─ Creating trigger after_song_insert               │ 
+ │                    │││ ├─ Creating trigger after_song_update               │ 
+ │                    │││ ├─ No triggers to update                            │ 
+ │                    ││├─┘                                                   │ 
+ │                    ││├─ Migration completed                                │ 
+ │                    ││┘                                                     │ 
+ │                    ││                                                      │ 
+ │                    ││                                                      │ 
+ │                    ││                                                      │ 
+ │                    ││                                                      │ 
+ │                    ││                                                      │ 
+ │                    ││                                                      │ 
+ │                    ││                                                      │ 
+ │                    ││                                                      │ 
+ ╰────────────────────╯╰──────────────────────────────────────────────────────╯ 
                                                                                 
 
