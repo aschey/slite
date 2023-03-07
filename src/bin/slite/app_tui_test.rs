@@ -106,6 +106,7 @@ async fn test_dry_run() {
     tester
         .wait_for(|term| term.terminal_view().contains("Migration completed"))
         .await
+        .map_err(|e| e.terminal_view())
         .unwrap();
     tester
         .send_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()))
