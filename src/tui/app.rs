@@ -95,9 +95,9 @@ impl<'a> AppState<'a> {
         Ok(AppState {
             titles: vec!["Source", "Target", "Diff", "Migrate"],
             index: 0,
-            source_schema: SqlState::schema(schema.source.clone())?,
-            target_schema: SqlState::schema(schema.target.clone())?,
-            diff_schema: SqlState::diff(schema.clone())?,
+            source_schema: SqlState::schema("Source", schema.source.clone())?,
+            target_schema: SqlState::schema("Target", schema.target.clone())?,
+            diff_schema: SqlState::diff("Diff", schema.clone())?,
             migration: MigrationState::new(migrator_factory),
         })
     }

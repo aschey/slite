@@ -21,8 +21,8 @@ color-eyre = {version = "0.6.2", optional = true}
 confique = {version = "0.2.2", default-features = false, features = ["toml"], optional = true}
 content_inspector = {version = "0.2.4", optional = true}
 crossterm = {version = "0.25", optional = true}
-#elm-ui = {path = "../elm-ui-rs/crates/elm-ui", optional = true}
-elm-ui = {git = "https://github.com/aschey/elm-ui-rs", rev = "4b038f3929f0696f250f9c5d010aebbe8f67442d", optional = true, features = ["crossterm"]}
+#elm-ui = {path = "../elm-ui-rs/crates/elm-ui", optional = true, features = ["crossterm"]}
+elm-ui = {git = "https://github.com/aschey/elm-ui-rs", rev = "f08df00754d0658eb24f30e7d0e167fd25ed7284", optional = true, features = ["crossterm"]}
 futures = {version = "0.3.26", optional = true}
 ignore = {version = "0.4.20", optional = true}
 imara-diff = {version = "0.1", optional = true}
@@ -86,8 +86,9 @@ tui = [
 ]
 
 [dev-dependencies]
-elm-ui-tester = {git = "https://github.com/aschey/elm-ui-rs", rev = "4b038f3929f0696f250f9c5d010aebbe8f67442d", features = ["tui", "crossterm"]}
-#elm-ui-tester = {path = "../elm-ui-rs/crates/elm-ui-tester", features = ["tui"]}
+elm-ui-tester = {git = "https://github.com/aschey/elm-ui-rs", rev = "f08df00754d0658eb24f30e7d0e167fd25ed7284", features = ["tui", "crossterm"]}
+#elm-ui-tester = {path = "../elm-ui-rs/crates/elm-ui-tester", features = ["tui", "crossterm"]}
 insta = {version = "1.28.0", features = ["filters"]}
 rstest = "0.16.0"
+serial_test = "1.0.0"
 tempfile = "3.4.0"

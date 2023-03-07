@@ -1,6 +1,6 @@
 use tui::{
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::Span,
 };
 
 pub struct Button<'a> {
@@ -32,9 +32,9 @@ impl<'a> Button<'a> {
         Self { fg, ..self }
     }
 
-    pub fn build(self) -> Spans<'a> {
+    pub fn build(self) -> Span<'a> {
         if self.enabled {
-            Spans::from(Span::styled(
+            Span::styled(
                 self.text,
                 Style::default()
                     .bg(Color::Black)
@@ -44,12 +44,9 @@ impl<'a> Button<'a> {
                     } else {
                         Modifier::empty()
                     }),
-            ))
+            )
         } else {
-            Spans::from(Span::styled(
-                self.text,
-                Style::default().fg(Color::Gray).bg(Color::Black),
-            ))
+            Span::styled(self.text, Style::default().fg(Color::Gray).bg(Color::Black))
         }
     }
 }

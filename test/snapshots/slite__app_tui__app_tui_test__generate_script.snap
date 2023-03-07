@@ -1,0 +1,205 @@
+---
+source: src/bin/slite/./app_tui_test.rs
+expression: view
+---
+                                                                                                    
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────╮ 
+ │ Source │ Target │ Diff │ Migrate                                                               │ 
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────╯ 
+ ╭Controls───────────╮╭Logs yyyy-mm-dd hh:mm:dd───────────────────────────────────────────────────╮ 
+ │      Dry Run      ││PRAGMA defer_foreign_keys = TRUE                                           │ 
+ │                   ││                                                                           │ 
+ │  Generate Script  ││CREATE TABLE album (                                                       │ 
+ │                   ││ album_id INTEGER PRIMARY KEY NOT NULL,                                    │ 
+ │      Migrate      ││ album_name TEXT NOT NULL COLLATE NOCASE,                                  │ 
+ │                   ││ album_artist_id INTEGER NOT NULL,                                         │ 
+ │   Clear Output    ││ created_date INTEGER NOT NULL,                                            │ 
+ │                   ││ UNIQUE(album_name, album_artist_id)                                       │ 
+ │                   ││ FOREIGN KEY(album_artist_id) REFERENCES album_artist(album_artist_id)     │ 
+ │                   ││)                                                                          │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TABLE album_artist (                                                │ 
+ │                   ││ album_artist_id INTEGER PRIMARY KEY NOT NULL,                             │ 
+ │                   ││ album_artist_name TEXT NOT NULL COLLATE NOCASE,                           │ 
+ │                   ││ created_date INTEGER NOT NULL,                                            │ 
+ │                   ││ UNIQUE (album_artist_name COLLATE NOCASE)                                 │ 
+ │                   ││)                                                                          │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TABLE artist (                                                      │ 
+ │                   ││ artist_id INTEGER PRIMARY KEY NOT NULL,                                   │ 
+ │                   ││ artist_name TEXT NOT NULL COLLATE NOCASE,                                 │ 
+ │                   ││ created_date INTEGER NOT NULL,                                            │ 
+ │                   ││ UNIQUE (artist_name COLLATE NOCASE)                                       │ 
+ │                   ││)                                                                          │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE VIRTUAL TABLE search_index USING fts5(                              │ 
+ │                   ││ entry_value,                                                              │ 
+ │                   ││ entry_type unindexed,                                                     │ 
+ │                   ││ assoc_id unindexed,                                                       │ 
+ │                   ││ tokenize = 'unicode61 remove_diacritics 2'                                │ 
+ │                   ││)                                                                          │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE VIRTUAL TABLE search_spellfix USING spellfix1                       │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE VIRTUAL TABLE search_vocab USING fts5vocab(search_index, row)       │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TABLE song (                                                        │ 
+ │                   ││ song_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,                       │ 
+ │                   ││ song_path TEXT NOT NULL COLLATE NOCASE,                                   │ 
+ │                   ││ artist_id INTEGER NOT NULL,                                               │ 
+ │                   ││ song_title TEXT NOT NULL,                                                 │ 
+ │                   ││ album_id INTEGER NOT NULL,                                                │ 
+ │                   ││ track_number INTEGER NOT NULL,                                            │ 
+ │                   ││ play_count INTEGER NOT NULL DEFAULT 0,                                    │ 
+ │                   ││ disc_number INTEGER NOT NULL,                                             │ 
+ │                   ││ song_year INTEGER NOT NULL,                                               │ 
+ │                   ││ song_month INTEGER NOT NULL,                                              │ 
+ │                   ││ song_day INTEGER NOT NULL,                                                │ 
+ │                   ││ duration INTEGER NOT NULL,                                                │ 
+ │                   ││ sample_rate INTEGER NOT NULL,                                             │ 
+ │                   ││ bit_rate INTEGER NOT NULL,                                                │ 
+ │                   ││ file_size INTEGER NOT NULL,                                               │ 
+ │                   ││ album_art_path TEXT NULL COLLATE NOCASE,                                  │ 
+ │                   ││ FOREIGN KEY(artist_id) REFERENCES artist(artist_id),                      │ 
+ │                   ││ FOREIGN KEY(album_id) REFERENCES album(album_id),                         │ 
+ │                   ││ UNIQUE (song_path COLLATE NOCASE)                                         │ 
+ │                   ││)                                                                          │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE INDEX idx_song_path ON song(song_path)                              │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE VIEW vw_all AS                                                      │ 
+ │                   ││SELECT * FROM song s                                                       │ 
+ │                   ││INNER JOIN artist ar on s.artist_id = ar.artist_id                         │ 
+ │                   ││INNER JOIN album al on al.album_id = s.album_id                            │ 
+ │                   ││INNER JOIN album_artist aa on aa.album_artist_id = al.album_artist_id      │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_album_artist_delete                                   │ 
+ │                   ││AFTER DELETE ON album_artist BEGIN                                         │ 
+ │                   ││DELETE FROM search_index                                                   │ 
+ │                   ││WHERE assoc_id = old.album_artist_id                                       │ 
+ │                   ││ AND entry_type = 'album_artist';                                          │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_album_artist_insert                                   │ 
+ │                   ││AFTER                                                                      │ 
+ │                   ││INSERT ON album_artist BEGIN                                               │ 
+ │                   ││INSERT INTO search_index (                                                 │ 
+ │                   ││  assoc_id,                                                                │ 
+ │                   ││  entry_value,                                                             │ 
+ │                   ││  entry_type                                                               │ 
+ │                   ││ )                                                                         │ 
+ │                   ││VALUES(                                                                    │ 
+ │                   ││  new.album_artist_id,                                                     │ 
+ │                   ││  new.album_artist_name,                                                   │ 
+ │                   ││  'album_artist'                                                           │ 
+ │                   ││ );                                                                        │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_album_artist_update                                   │ 
+ │                   ││UPDATE OF album_artist_name ON album_artist BEGIN                          │ 
+ │                   ││UPDATE search_index                                                        │ 
+ │                   ││SET entry_value = new.album_artist_name                                    │ 
+ │                   ││WHERE assoc_id = old.album_artist_id                                       │ 
+ │                   ││ AND entry_type = 'album_artist';                                          │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_album_delete                                          │ 
+ │                   ││AFTER DELETE ON album BEGIN                                                │ 
+ │                   ││DELETE FROM search_index                                                   │ 
+ │                   ││WHERE assoc_id = old.album_id                                              │ 
+ │                   ││ AND entry_type = 'album';                                                 │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_album_insert                                          │ 
+ │                   ││AFTER                                                                      │ 
+ │                   ││INSERT ON album BEGIN                                                      │ 
+ │                   ││INSERT INTO search_index (                                                 │ 
+ │                   ││  assoc_id,                                                                │ 
+ │                   ││  entry_value,                                                             │ 
+ │                   ││  entry_type                                                               │ 
+ │                   ││ )                                                                         │ 
+ │                   ││VALUES(                                                                    │ 
+ │                   ││  new.album_id,                                                            │ 
+ │                   ││  new.album_name,                                                          │ 
+ │                   ││  'album'                                                                  │ 
+ │                   ││ );                                                                        │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_album_update                                          │ 
+ │                   ││UPDATE OF album_name ON album BEGIN                                        │ 
+ │                   ││UPDATE search_index                                                        │ 
+ │                   ││SET entry_value = new.album_name                                           │ 
+ │                   ││WHERE assoc_id = old.album_id                                              │ 
+ │                   ││ AND entry_type = 'album';                                                 │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_artist_delete                                         │ 
+ │                   ││AFTER DELETE ON artist BEGIN                                               │ 
+ │                   ││DELETE FROM search_index                                                   │ 
+ │                   ││WHERE assoc_id = old.artist_id                                             │ 
+ │                   ││ AND entry_type = 'artist';                                                │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_artist_insert                                         │ 
+ │                   ││AFTER                                                                      │ 
+ │                   ││INSERT ON artist BEGIN                                                     │ 
+ │                   ││INSERT INTO search_index (                                                 │ 
+ │                   ││  assoc_id,                                                                │ 
+ │                   ││  entry_value,                                                             │ 
+ │                   ││  entry_type                                                               │ 
+ │                   ││ )                                                                         │ 
+ │                   ││VALUES(                                                                    │ 
+ │                   ││  new.artist_id,                                                           │ 
+ │                   ││  new.artist_name,                                                         │ 
+ │                   ││  'artist'                                                                 │ 
+ │                   ││ );                                                                        │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_artist_update                                         │ 
+ │                   ││UPDATE OF artist_name ON artist BEGIN                                      │ 
+ │                   ││UPDATE search_index                                                        │ 
+ │                   ││SET entry_value = new.artist_name                                          │ 
+ │                   ││WHERE assoc_id = old.artist_id                                             │ 
+ │                   ││ and entry_type = 'artist';                                                │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_song_delete                                           │ 
+ │                   ││AFTER DELETE ON song BEGIN                                                 │ 
+ │                   ││DELETE FROM search_index                                                   │ 
+ │                   ││WHERE assoc_id = old.song_id                                               │ 
+ │                   ││ AND entry_type = 'song';                                                  │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_song_insert                                           │ 
+ │                   ││AFTER                                                                      │ 
+ │                   ││INSERT ON song BEGIN                                                       │ 
+ │                   ││INSERT INTO search_index (                                                 │ 
+ │                   ││  assoc_id,                                                                │ 
+ │                   ││  entry_value,                                                             │ 
+ │                   ││  entry_type                                                               │ 
+ │                   ││ )                                                                         │ 
+ │                   ││VALUES(                                                                    │ 
+ │                   ││  new.song_id,                                                             │ 
+ │                   ││  new.song_title,                                                          │ 
+ │                   ││  'song'                                                                   │ 
+ │                   ││ );                                                                        │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││CREATE TRIGGER after_song_update                                           │ 
+ │                   ││UPDATE OF song_title ON song BEGIN                                         │ 
+ │                   ││UPDATE search_index                                                        │ 
+ │                   ││SET entry_value = new.song_title                                           │ 
+ │                   ││WHERE assoc_id = old.song_id                                               │ 
+ │                   ││ AND entry_type = 'song';                                                  │ 
+ │                   ││END                                                                        │ 
+ │                   ││                                                                           │ 
+ │                   ││                                                                           │ 
+ │                   ││                                                                           │ 
+ │                   ││                                                                           │ 
+ │                   ││                                                                           │ 
+ │                   ││                                                                           │ 
+ │                   ││                                                                           │ 
+ │                   ││                                                                           │ 
+ ╰───────────────────╯╰───────────────────────────────────────────────────────────────────────────╯ 
+                                                                                                    
+

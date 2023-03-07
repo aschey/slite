@@ -48,29 +48,37 @@ impl<'a> StatefulWidget for MigrationView<'a> {
             .split(area);
 
         Paragraph::new(vec![
-            Button::new("     Dry Run     ")
-                .fg(Color::Blue)
-                .selected(state.selected == 0)
-                .enabled(state.controls_enabled)
-                .build(),
+            Spans::from(
+                Button::new("     Dry Run     ")
+                    .fg(Color::Blue)
+                    .selected(state.selected == 0)
+                    .enabled(state.controls_enabled)
+                    .build(),
+            ),
             Spans::from(""),
-            Button::new(" Generate Script ")
-                .fg(Color::Blue)
-                .selected(state.selected == 1)
-                .enabled(state.controls_enabled)
-                .build(),
+            Spans::from(
+                Button::new(" Generate Script ")
+                    .fg(Color::Blue)
+                    .selected(state.selected == 1)
+                    .enabled(state.controls_enabled)
+                    .build(),
+            ),
             Spans::from(""),
-            Button::new("     Migrate     ")
-                .fg(Color::Yellow)
-                .selected(state.selected == 2)
-                .enabled(state.controls_enabled)
-                .build(),
+            Spans::from(
+                Button::new("     Migrate     ")
+                    .fg(Color::Yellow)
+                    .selected(state.selected == 2)
+                    .enabled(state.controls_enabled)
+                    .build(),
+            ),
             Spans::from(""),
-            Button::new("  Clear Output   ")
-                .fg(Color::Magenta)
-                .selected(state.selected == 3)
-                .enabled(state.controls_enabled)
-                .build(),
+            Spans::from(
+                Button::new("  Clear Output   ")
+                    .fg(Color::Magenta)
+                    .selected(state.selected == 3)
+                    .enabled(state.controls_enabled)
+                    .build(),
+            ),
         ])
         .alignment(Alignment::Center)
         .block(state.bipanel_state.left_block("Controls"))
@@ -89,29 +97,15 @@ impl<'a> StatefulWidget for MigrationView<'a> {
             ])
             .wrap(Wrap { trim: false });
             let buttons = Paragraph::new(Spans::from(vec![
-                Span::styled(
-                    " Cancel ",
-                    Style::default()
-                        .bg(Color::Black)
-                        .fg(Color::Blue)
-                        .add_modifier(if state.popup_button_index == 0 {
-                            Modifier::BOLD | Modifier::SLOW_BLINK | Modifier::REVERSED
-                        } else {
-                            Modifier::empty()
-                        }),
-                ),
+                Button::new(" Cancel ")
+                    .fg(Color::Blue)
+                    .selected(state.popup_button_index == 0)
+                    .build(),
                 Span::from("  "),
-                Span::styled(
-                    " Migrate ",
-                    Style::default()
-                        .bg(Color::Black)
-                        .fg(Color::Yellow)
-                        .add_modifier(if state.popup_button_index == 1 {
-                            Modifier::BOLD | Modifier::SLOW_BLINK | Modifier::REVERSED
-                        } else {
-                            Modifier::empty()
-                        }),
-                ),
+                Button::new(" Migrate ")
+                    .fg(Color::Yellow)
+                    .selected(state.popup_button_index == 1)
+                    .build(),
                 Span::from(" "),
             ]))
             .alignment(Alignment::Right);

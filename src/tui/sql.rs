@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 use super::{
     panel, BiPanel, BiPanelState, Objects, ObjectsState, Scrollable, ScrollableState, StyledObject,
@@ -15,9 +15,15 @@ use tui::{
     widgets::{Paragraph, StatefulWidget, Wrap},
 };
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SqlView<'a> {
-    _phantom: PhantomData<&'a ()>,
+    title: &'a str,
+}
+
+impl<'a> SqlView<'a> {
+    pub fn new(title: &'a str) -> Self {
+        Self { title }
+    }
 }
 
 impl<'a> StatefulWidget for SqlView<'a> {
@@ -37,39 +43,38 @@ impl<'a> StatefulWidget for SqlView<'a> {
             ])
             .split(area);
 
-        Objects::new(state.bipanel_state.left_block("Objects")).render(
+        Objects::new(state.bipanel_state.left_block(self.title)).render(
             chunks[0],
             buf,
             &mut state.state,
         );
 
-        if !state.sql.is_empty() {
-            Scrollable::new(
-                Paragraph::new(
-                    state
-                        .sql
-                        .get(state.state.selected_index())
-                        .expect("Selected index out of bounds")
-                        .clone(),
-                )
-                .wrap(Wrap { trim: false })
-                .block(state.bipanel_state.right_block("SQL")),
+        Scrollable::new(
+            Paragraph::new(
+                state
+                    .sql
+                    .get(state.state.selected_index())
+                    .cloned()
+                    .unwrap_or_default(),
             )
-            .render(chunks[1], buf, &mut state.scroller);
-        }
+            .wrap(Wrap { trim: false })
+            .block(state.bipanel_state.right_block("SQL")),
+        )
+        .render(chunks[1], buf, &mut state.scroller);
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct SqlState<'a> {
     sql: Vec<Text<'a>>,
+    title: &'a str,
     state: ObjectsState,
     scroller: ScrollableState,
     bipanel_state: BiPanelState,
 }
 
 impl<'a> SqlState<'a> {
-    pub fn diff(schemas: MigrationMetadata) -> Result<Self, SqlFormatError> {
+    pub fn diff(title: &'a str, schemas: MigrationMetadata) -> Result<Self, SqlFormatError> {
         let diffs = diff_metadata(schemas);
 
         let objects = diffs.iter().map(|(object_type, objects)| {
@@ -113,10 +118,10 @@ impl<'a> SqlState<'a> {
 
         let state = ObjectsState::new(styled);
 
-        Ok(Self::new(list_items?, state))
+        Ok(Self::new(title, list_items?, state))
     }
 
-    pub fn schema(schema: Metadata) -> Result<Self, SqlFormatError> {
+    pub fn schema(title: &'a str, schema: Metadata) -> Result<Self, SqlFormatError> {
         let objects = schema.iter().map(|(object_type, objects)| {
             (
                 object_type.to_owned(),
@@ -145,14 +150,15 @@ impl<'a> SqlState<'a> {
             })
             .collect();
 
-        Ok(Self::new(list_items?, state))
+        Ok(Self::new(title, list_items?, state))
     }
 
-    fn new(sql: Vec<Text<'static>>, state: ObjectsState) -> Self {
+    fn new(title: &'a str, sql: Vec<Text<'static>>, state: ObjectsState) -> Self {
         let height = sql.get(0).map(|s| s.height()).unwrap_or(0) as u16;
         let scroller = ScrollableState::new(height);
         Self {
             sql,
+            title,
             state,
             scroller,
             bipanel_state: BiPanelState::default(),
@@ -181,7 +187,7 @@ impl<'a> SqlState<'a> {
 
     pub fn refresh_schema(&mut self, metadata: Metadata) -> Result<(), SqlFormatError> {
         let selected = self.selected_item();
-        let mut new_state = SqlState::schema(metadata)?;
+        let mut new_state = SqlState::schema(self.title, metadata)?;
         if let Some(selected) = selected {
             new_state.select(&selected);
         }
@@ -191,7 +197,7 @@ impl<'a> SqlState<'a> {
 
     pub fn refresh_diff(&mut self, metadata: MigrationMetadata) -> Result<(), SqlFormatError> {
         let selected = self.selected_item();
-        let mut new_state = SqlState::diff(metadata)?;
+        let mut new_state = SqlState::diff(self.title, metadata)?;
         if let Some(selected) = selected {
             new_state.select(&selected);
         }
@@ -263,7 +269,7 @@ impl<'a> Model for SqlState<'a> {
     }
 
     fn view(&self, (rect, buf): &mut Self::Writer) -> Result<(), Self::Error> {
-        SqlView::default().render(*rect, buf, &mut self.clone());
+        SqlView::new(self.title).render(*rect, buf, &mut self.clone());
         Ok(())
     }
 }
