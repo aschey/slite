@@ -55,6 +55,7 @@ enum AppConfig {
 }
 
 #[derive(clap::Subcommand, Clone)]
+#[command(author, version, about)]
 enum AppCommand {
     Migrate { migrate: Migrate },
     Config { config: AppConfig },
