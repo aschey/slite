@@ -1,7 +1,9 @@
 use color_eyre::{eyre, Report};
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle,
+    },
 };
 use elm_ui::{Command, Message, Model, OptionalCommand, Program};
 use slite::{
@@ -60,7 +62,7 @@ pub async fn run_tui(
 ) -> Result<(), Report> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, SetTitle("Slite"))?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
