@@ -23,6 +23,7 @@ pub use connection::*;
 mod metadata;
 pub use metadata::*;
 pub mod error;
+pub use rusqlite::Connection;
 
 use crate::connection::TargetTransaction;
 #[cfg(not(feature = "pretty-print"))]
@@ -30,7 +31,6 @@ pub use default_sql_printer::SqlPrinter;
 use error::{InitializationError, MigrationError, QueryError};
 use once_cell::sync::Lazy;
 use regex::Regex;
-use rusqlite::Connection;
 use std::{
     cmp::Ordering,
     collections::BTreeMap,

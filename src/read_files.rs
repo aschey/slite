@@ -7,7 +7,7 @@ use std::{
 use ignore::WalkBuilder;
 
 pub fn read_sql_files(sql_dir: impl AsRef<std::path::Path>) -> Vec<String> {
-    let mut paths: Vec<_> = ignore::WalkBuilder::new(sql_dir)
+    let paths: Vec<_> = ignore::WalkBuilder::new(sql_dir)
         .max_depth(Some(5))
         .filter_entry(|entry| {
             let path = entry.path();
@@ -17,6 +17,10 @@ pub fn read_sql_files(sql_dir: impl AsRef<std::path::Path>) -> Vec<String> {
         .filter_map(|dir_result| dir_result.ok().map(|d| d.path().to_path_buf()))
         .collect();
 
+    sort_paths(paths)
+}
+
+pub fn sort_paths(mut paths: Vec<PathBuf>) -> Vec<String> {
     paths.sort_by(|a, b| {
         let a_seq = get_sequence(a);
         let b_seq = get_sequence(b);
@@ -70,8 +74,7 @@ pub fn read_extension_dir(extension_dir: impl Into<PathBuf>) -> Result<Vec<PathB
         .collect())
 }
 
-#[cfg(feature = "read-files")]
-fn get_sequence(path: &std::path::Path) -> i32 {
+pub fn get_sequence(path: &std::path::Path) -> i32 {
     let path_str = path
         .file_name()
         .unwrap_or_default()
