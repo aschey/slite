@@ -1,7 +1,7 @@
-after_migration = "./test/post-migration"
-before_migration = "./test/pre-migration"
 extension_dir = "./demo/extensions"
 ignore = "(search_spellfix_vocab.*)|(search_index_.*)"
 log_level = "debug"
 pager = false
+post_migration = "./test/post-migration"
+pre_migration = "./test/pre-migration"
 source = "./test/schema"

@@ -166,20 +166,28 @@ impl<'a> MakeWriter<'a> for PagerWrapper {
 
 #[derive(Debug, Clone, Default, Args, confique::Config, Serialize, Deserialize)]
 pub struct Conf {
+    #[config(env = "SLITE_SOURCE_DIR")]
     #[arg(short, long, value_parser = source_parser)]
     pub source: Option<PathBuf>,
-    #[arg(short, long, value_parser = source_parser)]
-    pub before_migration: Option<PathBuf>,
-    #[arg(short, long, value_parser = source_parser)]
-    pub after_migration: Option<PathBuf>,
+    #[config(env = "SLITE_PRE_MIGRATION_DIR")]
+    #[arg(short='e', long, value_parser = source_parser)]
+    pub pre_migration: Option<PathBuf>,
+    #[config(env = "SLITE_POST_MIGRATION_DIR")]
+    #[arg(short='o', long, value_parser = source_parser)]
+    pub post_migration: Option<PathBuf>,
+    #[config(env = "SLITE_TARGET_DB")]
     #[arg(short, long, value_parser = destination_parser)]
     pub target: Option<PathBuf>,
-    #[arg(short, long, value_parser = source_parser)]
+    #[config(env = "SLITE_EXTENSION_DIR")]
+    #[arg(short='d', long, value_parser = source_parser)]
     pub extension_dir: Option<PathBuf>,
+    #[config(env = "SLITE_IGNORE_PATTERN")]
     #[arg(short, long, value_parser = regex_parser)]
     pub ignore: Option<SerdeRegex>,
+    #[config(env = "SLITE_LOG_LEVEL")]
     #[arg(short, long)]
     pub log_level: Option<SerdeLevel>,
+    #[config(env = "SLITE_USE_PAGER")]
     #[arg(short, long, action = ArgAction::SetTrue)]
     pub pager: Option<bool>,
 }
@@ -188,8 +196,8 @@ impl Conf {
     fn migrator_config_changed(&self, other: &Self) -> bool {
         self.extension_dir != other.extension_dir
             || self.ignore != other.ignore
-            || self.before_migration != other.before_migration
-            || self.after_migration != other.after_migration
+            || self.pre_migration != other.pre_migration
+            || self.post_migration != other.post_migration
     }
 }
 
@@ -272,20 +280,20 @@ impl ConfigHandler<Conf> for ConfigStore {
             self.update_log_level(&new_config.log_level);
         }
 
-        if previous_config.before_migration != new_config.before_migration {
+        if previous_config.pre_migration != new_config.pre_migration {
             self.tx.blocking_send(Command::simple(Message::custom(
                 TuiAppMessage::PathChanged(
-                    previous_config.before_migration.clone(),
-                    new_config.before_migration.clone(),
+                    previous_config.pre_migration.clone(),
+                    new_config.pre_migration.clone(),
                 ),
             )))?;
         }
 
-        if previous_config.after_migration != new_config.after_migration {
+        if previous_config.post_migration != new_config.post_migration {
             self.tx.blocking_send(Command::simple(Message::custom(
                 TuiAppMessage::PathChanged(
-                    previous_config.after_migration.clone(),
-                    new_config.after_migration.clone(),
+                    previous_config.post_migration.clone(),
+                    new_config.post_migration.clone(),
                 ),
             )))?;
         }
@@ -301,8 +309,8 @@ impl ConfigHandler<Conf> for ConfigStore {
                 )))?;
         }
 
-        if self.contains_path(&events, &new_config.before_migration)
-            || self.contains_path(&events, &new_config.after_migration)
+        if self.contains_path(&events, &new_config.pre_migration)
+            || self.contains_path(&events, &new_config.post_migration)
         {
             self.send_config_changed(&new_config)?;
         }
@@ -315,8 +323,8 @@ impl ConfigHandler<Conf> for ConfigStore {
         let partial = confique_partial_conf::PartialConf {
             source: cli_config.source,
             target: cli_config.target,
-            before_migration: cli_config.before_migration,
-            after_migration: cli_config.after_migration,
+            pre_migration: cli_config.pre_migration,
+            post_migration: cli_config.post_migration,
             extension_dir: cli_config.extension_dir,
             ignore: cli_config.ignore,
             log_level: cli_config.log_level,
@@ -325,6 +333,7 @@ impl ConfigHandler<Conf> for ConfigStore {
         Conf::builder()
             .preloaded(partial)
             .file(path)
+            .env()
             .load()
             .unwrap()
     }
@@ -335,10 +344,10 @@ impl ConfigHandler<Conf> for ConfigStore {
         if let Some(source) = config.source {
             paths.push(source);
         }
-        if let Some(before) = config.before_migration {
+        if let Some(before) = config.pre_migration {
             paths.push(before);
         }
-        if let Some(after) = config.after_migration {
+        if let Some(after) = config.post_migration {
             paths.push(after);
         }
         paths
@@ -375,12 +384,12 @@ impl ConfigStore {
                         .unwrap_or_default(),
                     ignore: new_config.ignore.clone().map(|r| r.0),
                     before_migration: new_config
-                        .before_migration
+                        .pre_migration
                         .clone()
                         .map(read_sql_files)
                         .unwrap_or_default(),
                     after_migration: new_config
-                        .after_migration
+                        .post_migration
                         .clone()
                         .map(read_sql_files)
                         .unwrap_or_default(),
@@ -429,8 +438,8 @@ impl App {
             ignore: cli_config.ignore,
             log_level: cli_config.log_level,
             pager: cli_config.pager,
-            before_migration: cli_config.before_migration,
-            after_migration: cli_config.after_migration,
+            pre_migration: cli_config.pre_migration,
+            post_migration: cli_config.post_migration,
         };
 
         let direct_path = PathBuf::from("./slite.toml");
@@ -463,7 +472,7 @@ impl App {
                 None => None,
             }
         };
-        let mut conf_builder = Conf::builder().preloaded(partial);
+        let mut conf_builder = Conf::builder().preloaded(partial).env();
         if let Some(path) = path {
             conf_builder = conf_builder.file(path);
         }
@@ -479,11 +488,8 @@ impl App {
             .unwrap_or_default();
 
         let ignore = conf.ignore.map(|i| i.0);
-        let before_migration = conf
-            .before_migration
-            .map(read_sql_files)
-            .unwrap_or_default();
-        let after_migration = conf.after_migration.map(read_sql_files).unwrap_or_default();
+        let before_migration = conf.pre_migration.map(read_sql_files).unwrap_or_default();
+        let after_migration = conf.post_migration.map(read_sql_files).unwrap_or_default();
         let config = slite::Config {
             extensions,
             ignore,

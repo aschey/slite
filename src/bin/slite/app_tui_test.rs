@@ -199,11 +199,8 @@ fn setup<'a>(width: u16, height: u16) -> (UiTester<TuiApp<'a, TestBackend>, Buff
     let tempdir = tempfile::tempdir().unwrap();
     conf.target = Some(tempdir.path().join("test.db"));
     let ignore = conf.ignore.map(|i| i.0);
-    let before_migration = conf
-        .before_migration
-        .map(read_sql_files)
-        .unwrap_or_default();
-    let after_migration = conf.after_migration.map(read_sql_files).unwrap_or_default();
+    let before_migration = conf.pre_migration.map(read_sql_files).unwrap_or_default();
+    let after_migration = conf.post_migration.map(read_sql_files).unwrap_or_default();
     let config = slite::Config {
         extensions,
         ignore,
