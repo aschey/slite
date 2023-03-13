@@ -49,7 +49,7 @@ impl<'a> StatefulWidget for MigrationView<'a> {
 
         Paragraph::new(vec![
             Spans::from(
-                Button::new("   Dry Run         ")
+                Button::new("   Dry Run         ")
                     .fg(Color::Blue)
                     .selected(state.selected == 0)
                     .enabled(state.controls_enabled)
@@ -57,7 +57,7 @@ impl<'a> StatefulWidget for MigrationView<'a> {
             ),
             Spans::from(""),
             Spans::from(
-                Button::new("   Generate Script ")
+                Button::new("   Generate Script ")
                     .fg(Color::Blue)
                     .selected(state.selected == 1)
                     .enabled(state.controls_enabled)
