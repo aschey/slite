@@ -5,7 +5,7 @@ use elm_ui_tester::{TerminalView, UiTester};
 use serial_test::serial;
 use slite::{
     read_extension_dir, read_sql_files,
-    tui::{BroadcastWriter, MigratorFactory},
+    tui_old::{BroadcastWriter, MigratorFactory},
 };
 use tempfile::TempDir;
 use tracing::metadata::LevelFilter;

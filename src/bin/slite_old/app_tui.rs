@@ -8,7 +8,7 @@ use crossterm::{
 use elm_ui::{Command, Message, Model, OptionalCommand, Program};
 use slite::{
     error::RefreshError,
-    tui::{AppState, MigratorFactory, ReloadableConfig},
+    tui_old::{AppState, MigratorFactory, ReloadableConfig},
 };
 use std::{
     io::{self},
@@ -139,7 +139,7 @@ impl<'a, B: Backend> Model for TuiApp<'a, B> {
         writer
             .draw(|f| {
                 f.render_stateful_widget(
-                    slite::tui::App::default(),
+                    slite::tui_old::App::default(),
                     f.size(),
                     &mut self.state.clone(),
                 )
