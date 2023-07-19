@@ -13,7 +13,6 @@ impl Migrator {
         Ok(diffs
             .0
             .values()
-            .into_iter()
             .flat_map(|d| d.values())
             .filter_map(|d| {
                 if d.diff_text.is_empty() {

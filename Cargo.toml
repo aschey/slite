@@ -63,6 +63,7 @@ typed-builder = { version = "0.15.1", optional = true }
 tilia = { git = "https://github.com/aschey/tilia", rev = "41e0f16f92de09348479e71c95e2686423899f96", features = [
   "ipc",
 ] }
+indexmap = { version = "2", optional = true }
 
 [features]
 application = [
@@ -105,16 +106,17 @@ tui = [
   "rooibos",
   "tui-rsx",
   "typed-builder",
+  "indexmap",
 ]
 
 [dev-dependencies]
-elm-ui-tester = { git = "https://github.com/aschey/elm-ui-rs", rev = "f08df00754d0658eb24f30e7d0e167fd25ed7284", features = [
-  "tui",
-  "crossterm",
-] }
+# elm-ui-tester = { git = "https://github.com/aschey/elm-ui-rs", rev = "f08df00754d0658eb24f30e7d0e167fd25ed7284", features = [
+#   "tui",
+#   "crossterm",
+# ] }
 #elm-ui-tester = {path = "../elm-ui-rs/crates/elm-ui-tester", features = ["tui", "crossterm"]}
-insta = { version = "1.28.0", features = ["filters"] }
-rstest = "0.17.0"
+insta = { version = "1.31.0", features = ["filters"] }
+rstest = "0.18.1"
 serial_test = "2.0.0"
 tempfile = "3.4.0"
 

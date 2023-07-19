@@ -1,49 +1,52 @@
 use crossterm::event::KeyCode;
+use indexmap::IndexMap;
 use ratatui::backend::Backend;
 use rooibos::{
-    reactive::{ReadSignal, Scope, SignalGet, SignalUpdate, WriteSignal},
-    use_event_provider,
+    reactive::{create_memo, Scope, SignalGet, StoredValue},
+    use_event_context, use_focus_context,
 };
 use tui_rsx::prelude::*;
 
-#[derive(Debug, Clone)]
-struct Title<'a> {
-    icon: &'a str,
-    text: &'a str,
+use crate::tui::NUM_HEADERS;
+
+#[derive(Debug, Clone, Copy)]
+pub struct Title<'a> {
+    pub icon: &'a str,
+    pub text: &'a str,
+    pub position: usize,
 }
 
 #[component]
 pub fn HeaderTabs<B: Backend + 'static>(
     cx: Scope,
-    selected: ReadSignal<i32>,
-    set_selected: WriteSignal<i32>,
+    titles: StoredValue<IndexMap<&'static str, Title<'static>>>,
 ) -> impl View<B> {
-    let titles = vec![
-        Title {
-            icon: " ",
-            text: "Source",
-        },
-        Title {
-            icon: " ",
-            text: "Target",
-        },
-        Title {
-            icon: " ",
-            text: "Diff",
-        },
-        Title {
-            icon: " ",
-            text: "Migrate",
-        },
-    ];
-    let titles_len = titles.len() as i32;
-    let event_provider = use_event_provider(cx);
-    event_provider.create_key_effect(move |event| match event.code {
+    let focus_context = use_focus_context(cx);
+    let focused_id = focus_context.get_focus_selector();
+    focus_context.set_focus(titles.with_value(|t| t.keys().next().copied()));
+
+    let current_tab_index = create_memo(cx, move |_| {
+        let id = focused_id.get().unwrap();
+        let title = titles.with_value(|t| t.get(id.as_str()).copied()).unwrap();
+        title.position as i32
+    });
+
+    let update_current_tab = move |delta: i32| {
+        let next_tab = (current_tab_index.get() + delta).rem_euclid(NUM_HEADERS);
+        let next = titles.with_value(|t| t.keys().nth(next_tab as usize).copied());
+        focus_context.set_focus(next);
+    };
+
+    let previous_tab = move || update_current_tab(-1);
+    let next_tab = move || update_current_tab(1);
+
+    let event_context = use_event_context(cx);
+    event_context.create_key_effect(move |event| match event.code {
         KeyCode::Left => {
-            set_selected.update(|c| *c = (*c - 1).rem_euclid(titles_len));
+            previous_tab();
         }
         KeyCode::Right => {
-            set_selected.update(|c| *c = (*c + 1).rem_euclid(titles_len));
+            next_tab();
         }
         _ => {}
     });
@@ -51,7 +54,7 @@ pub fn HeaderTabs<B: Backend + 'static>(
     move || {
         view! { cx,
             <tabs
-                select=selected.get() as usize
+                select=current_tab_index.get() as usize
                 divider=prop!(<span style=prop!(<style fg=Color::Gray/>)>"|"</span>)
                 block=prop! {
                     <block
@@ -59,12 +62,11 @@ pub fn HeaderTabs<B: Backend + 'static>(
                         border_style=prop!(<style fg=Color::Black/>)
                         border_type=BorderType::Rounded
                     />}
-                >
-                {titles
-                    .iter()
-                    .enumerate()
-                    .map(|(i, t)| title(t.icon, t.text, i == selected.get() as usize))
-                    .collect()}
+                > {
+                    titles.with_value(|t| t.iter()
+                        .map(|(id,t)| title(t.icon, t.text, focused_id.get().as_deref() == Some(id)))
+                        .collect())
+                }
             </tabs>
         }
     }

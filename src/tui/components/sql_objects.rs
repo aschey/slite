@@ -2,7 +2,7 @@ use crossterm::event::KeyCode;
 use ratatui::{backend::Backend, layout::Rect, style::Color, Frame};
 use rooibos::{
     reactive::{create_signal, Scope, Signal, SignalGet, SignalUpdate},
-    use_event_provider,
+    use_event_context, use_focus_context,
 };
 use tui_rsx::{prelude::*, view};
 
@@ -15,8 +15,11 @@ use crate::{
 pub fn SqlObjects<B: Backend + 'static>(
     cx: Scope,
     title: &'static str,
-    #[prop(into)] focused: Signal<bool>,
+    id: &'static str,
 ) -> impl View<B> {
+    let focus_context = use_focus_context(cx);
+    let focused = focus_context.create_focus_handler(id);
+
     let (focused_index, set_focused_index) = create_signal(cx, 0usize);
 
     let (objects, set_objects) = create_signal(
@@ -54,8 +57,9 @@ pub fn SqlObjects<B: Backend + 'static>(
     );
 
     let (sql_view, set_sql_view) = create_signal(cx, "test".to_owned());
-    let event_provider = use_event_provider(cx);
-    event_provider.create_key_effect(move |key_event| {
+    let event_context = use_event_context(cx);
+
+    event_context.create_key_effect(move |key_event| {
         if focused.get() && key_event.code == KeyCode::Tab {
             set_focused_index.update(|s| *s = (*s + 1).rem_euclid(2));
         }

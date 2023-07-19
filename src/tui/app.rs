@@ -1,16 +1,21 @@
+use crate::tui::components::Title;
+
 use super::components::{HeaderTabs, HeaderTabsProps, SqlObjects, SqlObjectsProps};
 use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use indexmap::IndexMap;
 use ratatui::{backend::Backend, backend::CrosstermBackend, Terminal};
 use rooibos::{
     components::{Case, Switch, SwitchProps},
-    reactive::{create_signal, Scope, Signal, SignalGet},
-    EventHandler,
+    reactive::{store_value, Scope, SignalGet, StoredValue},
+    use_focus_context, EventHandler,
 };
 use std::io::stdout;
 use tui_rsx::{prelude::*, view};
+
+pub(crate) const NUM_HEADERS: i32 = 4;
 
 pub async fn run_tui(cx: Scope) {
     enable_raw_mode().unwrap();
@@ -37,13 +42,49 @@ pub async fn run_tui(cx: Scope) {
 
 #[component]
 fn App<B: Backend + 'static>(cx: Scope) -> impl View<B> {
-    let (selected_tab, set_selected_tab) = create_signal(cx, 0i32);
+    let titles = store_value(
+        cx,
+        IndexMap::from_iter(vec![
+            (
+                "source",
+                Title {
+                    icon: " ",
+                    text: "Source",
+                    position: 0,
+                },
+            ),
+            (
+                "target",
+                Title {
+                    icon: " ",
+                    text: "Target",
+                    position: 1,
+                },
+            ),
+            (
+                "diff",
+                Title {
+                    icon: " ",
+                    text: "Diff",
+                    position: 2,
+                },
+            ),
+            (
+                "migrate",
+                Title {
+                    icon: " ",
+                    text: "Migrate",
+                    position: 3,
+                },
+            ),
+        ]),
+    );
 
     move || {
         view! { cx,
             <column>
-                <HeaderTabs selected=selected_tab set_selected=set_selected_tab length=2/>
-                <TabContent selected_tab=selected_tab/>
+                <HeaderTabs titles=titles length=2/>
+                <TabContent titles=titles/>
             </column>
         }
     }
@@ -52,24 +93,23 @@ fn App<B: Backend + 'static>(cx: Scope) -> impl View<B> {
 #[component]
 fn TabContent<B: Backend + 'static>(
     cx: Scope,
-    #[prop(into)] selected_tab: Signal<i32>,
+    titles: StoredValue<IndexMap<&'static str, Title<'static>>>,
 ) -> impl View<B> {
-    let source_selected = Signal::derive(cx, move || selected_tab.get() == 0);
-    let target_selected = Signal::derive(cx, move || selected_tab.get() == 1);
-    let diff_selected = Signal::derive(cx, move || selected_tab.get() == 2);
+    let focus_context = use_focus_context(cx);
+    let focus_selector = focus_context.get_focus_selector();
 
     move || {
         view! {cx,
             <Switch>
-                <Case when=move || source_selected.get()>
-                    {move || view!(cx, <SqlObjects title="Source" focused=source_selected/>).into_boxed_view()}
-                </Case>
-                <Case when=move || target_selected.get()>
-                    {move || view!(cx, <SqlObjects title="Target" focused=target_selected/>).into_boxed_view()}
-                </Case>
-                <Case when=move || diff_selected.get()>
-                    {move || view!(cx, <SqlObjects title="Diff" focused=diff_selected/>).into_boxed_view()}
-                </Case>
+                {titles.with_value(|t| t.iter().enumerate().map(|(i, (id, title))| {
+                    let id = *id;
+                    let text = title.text;
+                    prop! {
+                        <Case key=i when=move || focus_selector.get().as_deref() == Some(id)>
+                            {move || view!(cx, <SqlObjects key=i title=text id=id/>).into_boxed_view()}
+                        </Case>
+                    }
+                }).collect())}
             </Switch>
         }
     }

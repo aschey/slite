@@ -2,12 +2,15 @@ use crossterm::event::KeyCode;
 use ratatui::backend::Backend;
 use rooibos::{
     reactive::{create_memo, create_signal, Scope, Signal, SignalGet, SignalUpdate},
-    use_event_provider,
+    use_event_context,
 };
 use std::collections::BTreeMap;
 use tui_rsx::prelude::*;
 
-use crate::{tui::components::panel, ObjectType};
+use crate::{
+    tui::{components::panel, NUM_HEADERS},
+    ObjectType,
+};
 
 #[derive(Clone)]
 pub struct StyledObject {
@@ -62,24 +65,27 @@ impl From<ListItemType> for ListItem<'static> {
     fn from(val: ListItemType) -> Self {
         match val {
             ListItemType::Entry(title, foreground) => {
-                prop!(<listItem style=prop!(<style fg=foreground/>)>{format!(" {title}")}</listItem>)
+                prop! {
+                    <listItem style=prop!(<style fg=foreground/>)>
+                        {format!(" {title}")}
+                    </listItem>
+                }
             }
 
             ListItemType::Header(title) => {
                 prop! {
-                <listItem>
-                    <text style=prop!(<style
-                        fg=Color::Blue
-                        add_modifier=Modifier::BOLD | Modifier::UNDERLINED/>)>
-                        {title}
-                    </text>
-                </listItem>}
+                    <listItem>
+                        <text style=prop!(<style
+                            fg=Color::Blue
+                            add_modifier=Modifier::BOLD | Modifier::UNDERLINED/>)>
+                            {title}
+                        </text>
+                    </listItem>
+                }
             }
         }
     }
 }
-
-const NUM_HEADERS: i32 = 4;
 
 #[component]
 pub fn ObjectsList<B: Backend + 'static>(
@@ -88,9 +94,8 @@ pub fn ObjectsList<B: Backend + 'static>(
     #[prop(into)] focused: Signal<bool>,
     #[prop(into)] objects: Signal<StyledObjects>,
 ) -> impl View<B> {
-    let event_provider = use_event_provider(cx);
+    let event_provider = use_event_context(cx);
 
-    // let (list_state, set_list_state) = create_signal(cx, s);
     let (adjusted_index, set_adjusted_index) = create_signal(cx, 0i32);
     let (real_index, set_real_index) = create_signal(cx, 1usize);
 
@@ -134,7 +139,6 @@ pub fn ObjectsList<B: Backend + 'static>(
     };
 
     let next = move || adjust_position(1);
-
     let previous = move || adjust_position(-1);
 
     event_provider.create_key_effect(move |key_event| {
@@ -156,7 +160,8 @@ pub fn ObjectsList<B: Backend + 'static>(
             <stateful_list
                 block=panel(title, focused.get())
                 highlight_style=prop!(<style fg=Color::Blue bg=Color::Black add_modifier=Modifier::BOLD/>)
-                state=prop!(<ListState with_selected=Some(real_index.get())/>)>
+                state=prop!(<ListState with_selected=Some(real_index.get())/>)
+            >
                 {items.get().into_iter().map(Into::into).collect::<Vec<_>>()}
             </stateful_list>
         }
