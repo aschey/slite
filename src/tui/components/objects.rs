@@ -114,6 +114,17 @@ pub fn ObjectsList<B: Backend + 'static>(
             .collect()
     });
 
+    let selected_color = move || -> Color {
+        match items
+            .get()
+            .get(real_index.get())
+            .expect("Item not selected")
+        {
+            ListItemType::Entry(_, color) => color.to_owned(),
+            ListItemType::Header(_) => unreachable!(),
+        }
+    };
+
     let adjusted_size = move || items.get().len() as i32 - NUM_HEADERS;
 
     let adjust_position = move |delta: i32| {
@@ -159,7 +170,7 @@ pub fn ObjectsList<B: Backend + 'static>(
         view! { cx,
             <stateful_list
                 block=panel(title, focused.get())
-                highlight_style=prop!(<style fg=Color::Blue bg=Color::Black add_modifier=Modifier::BOLD/>)
+                highlight_style=prop!(<style fg=selected_color() bg=Color::Black add_modifier=Modifier::BOLD/>)
                 state=prop!(<ListState with_selected=Some(real_index.get())/>)
             >
                 {items.get().into_iter().map(Into::into).collect::<Vec<_>>()}

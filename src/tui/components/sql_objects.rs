@@ -29,28 +29,28 @@ pub fn SqlObjects<B: Backend + 'static>(
                 ObjectType::Table,
                 vec![StyledObject {
                     object: "test".to_string(),
-                    foreground: Color::Black,
+                    foreground: Color::Reset,
                 }],
             ),
             (
                 ObjectType::Trigger,
                 vec![StyledObject {
                     object: "test".to_string(),
-                    foreground: Color::Black,
+                    foreground: Color::Reset,
                 }],
             ),
             (
                 ObjectType::Index,
                 vec![StyledObject {
                     object: "test".to_string(),
-                    foreground: Color::Black,
+                    foreground: Color::Reset,
                 }],
             ),
             (
                 ObjectType::View,
                 vec![StyledObject {
                     object: "test".to_string(),
-                    foreground: Color::Black,
+                    foreground: Color::Reset,
                 }],
             ),
         ]),
