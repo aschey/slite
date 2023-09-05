@@ -8,12 +8,15 @@ use crossterm::{
 use indexmap::IndexMap;
 use ratatui::{backend::Backend, backend::CrosstermBackend, Terminal};
 use rooibos::{
-    components::{Case, Switch, SwitchProps},
+    prelude::components::{Case, Switch, SwitchProps},
+    prelude::*,
+    runtime::use_focus_context,
+};
+use rooibos::{
     reactive::{store_value, Scope, SignalGet, StoredValue},
-    use_focus_context, EventHandler,
+    runtime::EventHandler,
 };
 use std::io::stdout;
-use tui_rsx::{prelude::*, view};
 
 pub(crate) const NUM_HEADERS: i32 = 4;
 
@@ -25,14 +28,7 @@ pub async fn run_tui(cx: Scope) {
     let terminal = Terminal::new(backend).unwrap();
     let handler = EventHandler::initialize(cx, terminal);
 
-    let mut v = mount!(cx, <App/>);
-    handler.render(move |terminal| {
-        terminal
-            .draw(|f| {
-                v.view(f, f.size());
-            })
-            .unwrap();
-    });
+    handler.render(mount!(cx, <App/>));
 
     let mut terminal = handler.run().await;
     disable_raw_mode().unwrap();
@@ -99,7 +95,7 @@ fn TabContent<B: Backend + 'static>(
     let focus_selector = focus_context.get_focus_selector();
 
     move || {
-        view! {cx,
+        view! { cx,
             <Switch>
                 {titles.with_value(|t| t.iter().enumerate().map(|(i, (id, title))| {
                     let id = *id;

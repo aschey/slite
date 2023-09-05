@@ -1,11 +1,11 @@
 use crossterm::event::KeyCode;
 use ratatui::backend::Backend;
-use rooibos::{
-    reactive::{create_memo, create_signal, Scope, Signal, SignalGet, SignalUpdate},
-    use_event_context,
+use rooibos::prelude::*;
+use rooibos::reactive::{
+    create_memo, create_signal, ReadSignal, Scope, Signal, SignalGet, SignalUpdate,
 };
+use rooibos::runtime::use_event_context;
 use std::collections::BTreeMap;
-use tui_rsx::prelude::*;
 
 use crate::{
     tui::{components::panel, NUM_HEADERS},
@@ -91,15 +91,15 @@ impl From<ListItemType> for ListItem<'static> {
 pub fn ObjectsList<B: Backend + 'static>(
     cx: Scope,
     title: &'static str,
-    #[prop(into)] focused: Signal<bool>,
-    #[prop(into)] objects: Signal<StyledObjects>,
+    #[prop(into)] focused: ReadSignal<bool>,
+    #[prop(into)] objects: ReadSignal<StyledObjects>,
 ) -> impl View<B> {
     let event_provider = use_event_context(cx);
 
-    let (adjusted_index, set_adjusted_index) = create_signal(cx, 0i32);
-    let (real_index, set_real_index) = create_signal(cx, 1usize);
+    let adjusted_index = create_signal(cx, 0i32);
+    let real_index = create_signal(cx, 1usize);
 
-    let items = create_memo(cx, move |_: Option<&Vec<ListItemType>>| {
+    let items = create_memo(cx, move || {
         let objects = objects.get();
         vec![]
             .into_iter()
@@ -111,7 +111,7 @@ pub fn ObjectsList<B: Backend + 'static>(
             .chain(objects.views().iter().map(Into::into))
             .chain([ListItemType::Header("Triggers".to_owned())])
             .chain(objects.triggers().iter().map(Into::into))
-            .collect()
+            .collect::<Vec<_>>()
     });
 
     let selected_color = move || -> Color {
@@ -132,7 +132,7 @@ pub fn ObjectsList<B: Backend + 'static>(
             return;
         }
 
-        set_adjusted_index.update(|i| *i = (*i + delta).rem_euclid(adjusted_size()));
+        adjusted_index.update(|i| *i = (*i + delta).rem_euclid(adjusted_size()));
 
         let mut next_index = (real_index.get() as i32 + delta).rem_euclid(items.get().len() as i32);
         let next_real_index = loop {
@@ -146,13 +146,13 @@ pub fn ObjectsList<B: Backend + 'static>(
                 None => unreachable!(),
             }
         };
-        set_real_index.update(|i| *i = next_real_index as usize);
+        real_index.set(next_real_index as usize);
     };
 
     let next = move || adjust_position(1);
     let previous = move || adjust_position(-1);
 
-    event_provider.create_key_effect(move |key_event| {
+    event_provider.create_key_effect(cx, move |key_event| {
         if focused.get() {
             match key_event.code {
                 KeyCode::Down => {

@@ -1,4 +1,4 @@
-use tui_rsx::prelude::*;
+use rooibos::prelude::*;
 
 pub fn panel(title: &'static str, focused: bool) -> Block {
     let modifier = if focused {

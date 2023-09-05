@@ -1,11 +1,9 @@
 use crossterm::event::KeyCode;
 use indexmap::IndexMap;
 use ratatui::backend::Backend;
-use rooibos::{
-    reactive::{create_memo, Scope, SignalGet, StoredValue},
-    use_event_context, use_focus_context,
-};
-use tui_rsx::prelude::*;
+use rooibos::prelude::*;
+use rooibos::reactive::{create_memo, Scope, SignalGet, StoredValue};
+use rooibos::runtime::{use_event_context, use_focus_context};
 
 use crate::tui::NUM_HEADERS;
 
@@ -25,7 +23,7 @@ pub fn HeaderTabs<B: Backend + 'static>(
     let focused_id = focus_context.get_focus_selector();
     focus_context.set_focus(titles.with_value(|t| t.keys().next().copied()));
 
-    let current_tab_index = create_memo(cx, move |_| {
+    let current_tab_index = create_memo(cx, move || {
         let id = focused_id.get().unwrap();
         let title = titles.with_value(|t| t.get(id.as_str()).copied()).unwrap();
         title.position as i32
@@ -41,7 +39,7 @@ pub fn HeaderTabs<B: Backend + 'static>(
     let next_tab = move || update_current_tab(1);
 
     let event_context = use_event_context(cx);
-    event_context.create_key_effect(move |event| match event.code {
+    event_context.create_key_effect(cx, move |event| match event.code {
         KeyCode::Left => {
             previous_tab();
         }

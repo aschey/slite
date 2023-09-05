@@ -3,8 +3,8 @@ mod app;
 
 #[cfg(feature = "application")]
 pub fn main() -> Result<(), color_eyre::eyre::Report> {
-    let (result, _scope) = rooibos::run_system(run);
-    result
+    rooibos::runtime::run_system(run)?;
+    Ok(())
 }
 
 #[cfg(feature = "application")]

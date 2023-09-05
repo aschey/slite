@@ -1,13 +1,13 @@
 use crate::tui::components::panel;
 use ratatui::backend::Backend;
-use rooibos::reactive::{ReadSignal, Scope, Signal, SignalGet};
-use tui_rsx::{prelude::*, view};
+use rooibos::prelude::*;
+use rooibos::reactive::{ReadSignal, Scope, SignalGet};
 
 #[component]
 pub fn Sql<B: Backend + 'static>(
     cx: Scope,
     sql_text: ReadSignal<String>,
-    #[prop(into)] focused: Signal<bool>,
+    #[prop(into)] focused: ReadSignal<bool>,
 ) -> impl View<B> {
     move || {
         view! { cx,
