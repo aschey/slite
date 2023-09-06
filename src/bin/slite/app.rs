@@ -1,3 +1,9 @@
+use std::fmt::Write;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::Arc;
+use std::{fs, io};
+
 use clap::{ArgAction, Args, CommandFactory, Parser, ValueEnum};
 use clap_complete::{generate, Shell};
 use color_eyre::Report;
@@ -9,28 +15,19 @@ use owo_colors::OwoColorize;
 use regex::Regex;
 use rooibos::reactive::Scope;
 use rusqlite::Connection;
-use serde::{de::Visitor, Deserialize, Serialize};
-use slite::{
-    error::InitializationError, read_extension_dir, read_sql_files, tui::run_tui, Migrator,
-    Options, SqlPrinter,
-};
-use std::{
-    fmt::Write,
-    fs, io,
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
-};
+use serde::de::Visitor;
+use serde::{Deserialize, Serialize};
+use slite::error::InitializationError;
+use slite::tui::run_tui;
+use slite::{read_extension_dir, read_sql_files, Migrator, Options, SqlPrinter};
 use tokio::sync::mpsc;
 use tracing::metadata::LevelFilter;
-use tracing_subscriber::{
-    filter::Targets,
-    fmt::MakeWriter,
-    prelude::*,
-    reload::{self, Handle},
-    util::SubscriberInitExt,
-    Layer, Registry,
-};
+use tracing_subscriber::filter::Targets;
+use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::reload::{self, Handle};
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{Layer, Registry};
 use tracing_tree2::HierarchicalLayer;
 
 #[derive(ValueEnum, Clone)]
@@ -254,11 +251,7 @@ impl App {
             match git_root {
                 Some(git_root) => {
                     let path = git_root.join("slite.toml");
-                    if path.exists() {
-                        Some(path)
-                    } else {
-                        None
-                    }
+                    if path.exists() { Some(path) } else { None }
                 }
                 None => None,
             }

@@ -1,16 +1,14 @@
+use std::collections::BTreeMap;
+
 use crossterm::event::KeyCode;
 use ratatui::backend::Backend;
 use rooibos::prelude::*;
-use rooibos::reactive::{
-    create_memo, create_signal, ReadSignal, Scope, Signal, SignalGet, SignalUpdate,
-};
+use rooibos::reactive::{create_memo, create_signal, ReadSignal, Scope, SignalGet, SignalUpdate};
 use rooibos::runtime::use_event_context;
-use std::collections::BTreeMap;
 
-use crate::{
-    tui::{components::panel, NUM_HEADERS},
-    ObjectType,
-};
+use crate::tui::components::panel;
+use crate::tui::NUM_HEADERS;
+use crate::ObjectType;
 
 #[derive(Clone)]
 pub struct StyledObject {
@@ -170,7 +168,9 @@ pub fn ObjectsList<B: Backend + 'static>(
         view! { cx,
             <stateful_list
                 block=panel(title, focused.get())
-                highlight_style=prop!(<style fg=selected_color() bg=Color::Black add_modifier=Modifier::BOLD/>)
+                highlight_style=prop!{
+                    <style fg=selected_color() bg=Color::Black add_modifier=Modifier::BOLD/>
+                }
                 state=prop!(<ListState with_selected=Some(real_index.get())/>)
             >
                 {items.get().into_iter().map(Into::into).collect::<Vec<_>>()}

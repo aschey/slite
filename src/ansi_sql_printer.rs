@@ -1,12 +1,11 @@
-use crate::Color;
 use once_cell::sync::OnceCell;
 use owo_colors::{AnsiColors, OwoColorize};
-use syntect::{
-    easy::HighlightLines,
-    highlighting::{Style, ThemeSet},
-    parsing::SyntaxSet,
-};
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{Style, ThemeSet};
+use syntect::parsing::SyntaxSet;
 use tracing::error;
+
+use crate::Color;
 
 pub(crate) static SYNTAXES: OnceCell<SyntaxSet> = OnceCell::new();
 static THEMES: OnceCell<ThemeSet> = OnceCell::new();

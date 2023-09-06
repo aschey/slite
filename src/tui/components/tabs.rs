@@ -62,7 +62,8 @@ pub fn HeaderTabs<B: Backend + 'static>(
                     />}
                 > {
                     titles.with_value(|t| t.iter()
-                        .map(|(id,t)| title(t.icon, t.text, focused_id.get().as_deref() == Some(id)))
+                        .map(|(id,t)|
+                            title(t.icon, t.text, focused_id.get().as_deref() == Some(id)))
                         .collect())
                 }
             </tabs>
@@ -75,7 +76,9 @@ fn title<'a>(icon: &'a str, text: &'a str, selected: bool) -> Line<'a> {
         prop! {
             <line>
                 <span style=prop!(<style fg=Color::Cyan/>)>{icon}</span>
-                <span style=prop!(<style fg=Color::White add_modifier=Modifier::BOLD/>)>{text}</span>
+                <span style=prop!(<style fg=Color::White add_modifier=Modifier::BOLD/>)>
+                    {text}
+                </span>
             </line>
         }
     } else {

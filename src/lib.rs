@@ -23,25 +23,24 @@ pub use connection::*;
 mod metadata;
 pub use metadata::*;
 pub mod error;
-pub use rusqlite::Connection;
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
+use std::fmt::Debug;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
-use crate::connection::TargetTransaction;
 #[cfg(not(feature = "pretty-print"))]
 pub use default_sql_printer::SqlPrinter;
 use error::{InitializationError, MigrationError, QueryError};
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::{
-    cmp::Ordering,
-    collections::BTreeMap,
-    fmt::Debug,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+pub use rusqlite::Connection;
 use tracing::{debug, info, span, Level};
 
+use crate::connection::TargetTransaction;
+
 macro_rules! regex {
-    ($name: ident, $re: literal $(,) ?) => {
+    ($name:ident, $re:literal $(,)?) => {
         static $name: Lazy<Regex> = Lazy::new(|| Regex::new($re).expect("Regex failed to compile"));
     };
 }

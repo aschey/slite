@@ -1,22 +1,19 @@
-use crate::tui::components::Title;
+use std::io::stdout;
 
-use super::components::{HeaderTabs, HeaderTabsProps, SqlObjects, SqlObjectsProps};
-use crossterm::{
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+use crossterm::execute;
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use indexmap::IndexMap;
-use ratatui::{backend::Backend, backend::CrosstermBackend, Terminal};
-use rooibos::{
-    prelude::components::{Case, Switch, SwitchProps},
-    prelude::*,
-    runtime::use_focus_context,
-};
-use rooibos::{
-    reactive::{store_value, Scope, SignalGet, StoredValue},
-    runtime::EventHandler,
-};
-use std::io::stdout;
+use ratatui::backend::{Backend, CrosstermBackend};
+use ratatui::Terminal;
+use rooibos::prelude::components::{Case, Switch, SwitchProps};
+use rooibos::prelude::*;
+use rooibos::reactive::{store_value, Scope, SignalGet, StoredValue};
+use rooibos::runtime::{use_focus_context, EventHandler};
+
+use super::components::{HeaderTabs, HeaderTabsProps, SqlObjects, SqlObjectsProps};
+use crate::tui::components::Title;
 
 pub(crate) const NUM_HEADERS: i32 = 4;
 
@@ -102,7 +99,9 @@ fn TabContent<B: Backend + 'static>(
                     let text = title.text;
                     prop! {
                         <Case key=i when=move || focus_selector.get().as_deref() == Some(id)>
-                            {move || view!(cx, <SqlObjects key=i title=text id=id/>).into_boxed_view()}
+                            {move || view! {cx,
+                                <SqlObjects key=i title=text id=id/>
+                            }.into_boxed_view()}
                         </Case>
                     }
                 }).collect())}

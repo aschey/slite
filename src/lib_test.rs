@@ -1,6 +1,7 @@
-use crate::{normalize_sql, MigrationError, Migrator, Options};
 use rstest::rstest;
 use rusqlite::{Connection, OpenFlags};
+
+use crate::{normalize_sql, MigrationError, Migrator, Options};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct SqliteMetadata {

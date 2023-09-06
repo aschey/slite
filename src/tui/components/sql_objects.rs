@@ -1,13 +1,16 @@
 use crossterm::event::KeyCode;
-use ratatui::{backend::Backend, layout::Rect, style::Color, Frame};
+use ratatui::backend::Backend;
+use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::Frame;
 use rooibos::prelude::*;
 use rooibos::reactive::{create_signal, IntoSignal, Scope, SignalGet, SignalUpdate};
 use rooibos::runtime::{use_event_context, use_focus_context};
 
-use crate::{
-    tui::components::{ObjectsList, ObjectsListProps, Sql, SqlProps, StyledObject, StyledObjects},
-    ObjectType,
+use crate::tui::components::{
+    ObjectsList, ObjectsListProps, Sql, SqlProps, StyledObject, StyledObjects,
 };
+use crate::ObjectType;
 
 #[component]
 pub fn SqlObjects<B: Backend + 'static>(

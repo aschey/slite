@@ -1,7 +1,8 @@
-use crate::tui::components::panel;
 use ratatui::backend::Backend;
 use rooibos::prelude::*;
 use rooibos::reactive::{ReadSignal, Scope, SignalGet};
+
+use crate::tui::components::panel;
 
 #[component]
 pub fn Sql<B: Backend + 'static>(

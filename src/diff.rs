@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
 use std::ops::Deref;
 
-use crate::{error::QueryError, unified_diff_builder::UnifiedDiffBuilder};
+use imara_diff::intern::InternedInput;
+use imara_diff::{diff, Algorithm};
+
+use crate::error::QueryError;
+use crate::unified_diff_builder::UnifiedDiffBuilder;
 use crate::{MigrationMetadata, Migrator, ObjectType, SqlPrinter};
-use imara_diff::{diff, intern::InternedInput, Algorithm};
 
 impl Migrator {
     pub fn diff(&mut self) -> Result<String, QueryError> {
