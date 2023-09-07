@@ -1,6 +1,5 @@
 use crossterm::event::KeyCode;
 use indexmap::IndexMap;
-use ratatui::backend::Backend;
 use rooibos::prelude::*;
 use rooibos::reactive::{create_memo, Scope, SignalGet, StoredValue};
 use rooibos::runtime::{use_event_context, use_focus_context};
@@ -15,11 +14,11 @@ pub struct Title<'a> {
 }
 
 #[component]
-pub fn HeaderTabs<B: Backend + 'static>(
+pub fn HeaderTabs<B: Backend>(
     cx: Scope,
     titles: StoredValue<IndexMap<&'static str, Title<'static>>>,
 ) -> impl View<B> {
-    let focus_context = use_focus_context(cx);
+    let focus_context = use_focus_context::<String>(cx);
     let focused_id = focus_context.get_focus_selector();
     focus_context.set_focus(titles.with_value(|t| t.keys().next().copied()));
 
@@ -57,7 +56,7 @@ pub fn HeaderTabs<B: Backend + 'static>(
                 block=prop! {
                     <block
                         borders=Borders::BOTTOM
-                        border_style=prop!(<style fg=Color::Black/>)
+                        border_style=prop!(<style fg=Color::DarkGray/>)
                         border_type=BorderType::Rounded
                     />}
                 > {
@@ -84,7 +83,7 @@ fn title<'a>(icon: &'a str, text: &'a str, selected: bool) -> Line<'a> {
     } else {
         prop! {
             <line>
-                <span style=prop!(<style fg=Color::Black/>)>
+                <span style=prop!(<style fg=Color::DarkGray/>)>
                     {format!("{icon}{text}")}
                 </span>
             </line>

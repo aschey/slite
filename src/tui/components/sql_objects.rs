@@ -1,5 +1,4 @@
 use crossterm::event::KeyCode;
-use ratatui::backend::Backend;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::Frame;
@@ -13,12 +12,8 @@ use crate::tui::components::{
 use crate::ObjectType;
 
 #[component]
-pub fn SqlObjects<B: Backend + 'static>(
-    cx: Scope,
-    title: &'static str,
-    id: &'static str,
-) -> impl View<B> {
-    let focus_context = use_focus_context(cx);
+pub fn SqlObjects<B: Backend>(cx: Scope, title: &'static str, id: &'static str) -> impl View<B> {
+    let focus_context = use_focus_context::<String>(cx);
     let focused = focus_context.create_focus_handler(id);
 
     let focused_index = create_signal(cx, 0usize);

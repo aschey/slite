@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use crossterm::event::KeyCode;
-use ratatui::backend::Backend;
 use rooibos::prelude::*;
 use rooibos::reactive::{create_memo, create_signal, ReadSignal, Scope, SignalGet, SignalUpdate};
 use rooibos::runtime::use_event_context;
@@ -86,7 +85,7 @@ impl From<ListItemType> for ListItem<'static> {
 }
 
 #[component]
-pub fn ObjectsList<B: Backend + 'static>(
+pub fn ObjectsList<B: Backend>(
     cx: Scope,
     title: &'static str,
     #[prop(into)] focused: ReadSignal<bool>,
@@ -169,7 +168,11 @@ pub fn ObjectsList<B: Backend + 'static>(
             <stateful_list
                 block=panel(title, focused.get())
                 highlight_style=prop!{
-                    <style fg=selected_color() bg=Color::Black add_modifier=Modifier::BOLD/>
+                    <style
+                        fg=selected_color()
+                        bg=Color::Black
+                        add_modifier=Modifier::BOLD
+                    />
                 }
                 state=prop!(<ListState with_selected=Some(real_index.get())/>)
             >

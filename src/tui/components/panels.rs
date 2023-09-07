@@ -6,7 +6,11 @@ pub fn panel(title: &'static str, focused: bool) -> Block {
     } else {
         Modifier::empty()
     };
-    let border_fg = if focused { Color::Reset } else { Color::Black };
+    let border_fg = if focused {
+        Color::Reset
+    } else {
+        Color::DarkGray
+    };
 
     prop! {
         <block

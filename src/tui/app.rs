@@ -5,12 +5,12 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use indexmap::IndexMap;
-use ratatui::backend::{Backend, CrosstermBackend};
+use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use rooibos::prelude::components::{Case, Switch, SwitchProps};
 use rooibos::prelude::*;
 use rooibos::reactive::{store_value, Scope, SignalGet, StoredValue};
-use rooibos::runtime::{use_focus_context, EventHandler};
+use rooibos::runtime::{provide_focus_context, use_focus_context, EventHandler};
 
 use super::components::{HeaderTabs, HeaderTabsProps, SqlObjects, SqlObjectsProps};
 use crate::tui::components::Title;
@@ -34,7 +34,8 @@ pub async fn run_tui(cx: Scope) {
 }
 
 #[component]
-fn App<B: Backend + 'static>(cx: Scope) -> impl View<B> {
+fn App<B: Backend>(cx: Scope) -> impl View<B> {
+    provide_focus_context::<String>(cx, Some("source".to_owned()));
     let titles = store_value(
         cx,
         IndexMap::from_iter(vec![
@@ -84,11 +85,11 @@ fn App<B: Backend + 'static>(cx: Scope) -> impl View<B> {
 }
 
 #[component]
-fn TabContent<B: Backend + 'static>(
+fn TabContent<B: Backend>(
     cx: Scope,
     titles: StoredValue<IndexMap<&'static str, Title<'static>>>,
 ) -> impl View<B> {
-    let focus_context = use_focus_context(cx);
+    let focus_context = use_focus_context::<String>(cx);
     let focus_selector = focus_context.get_focus_selector();
 
     move || {
