@@ -7,12 +7,11 @@ use crossterm::terminal::{
 use indexmap::IndexMap;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
-use rooibos::prelude::components::{Case, Switch, SwitchProps};
 use rooibos::prelude::*;
 use rooibos::reactive::{store_value, Scope, SignalGet, StoredValue};
 use rooibos::runtime::{provide_focus_context, use_focus_context, EventHandler};
 
-use super::components::{HeaderTabs, HeaderTabsProps, SqlObjects, SqlObjectsProps};
+use super::components::{header_tabs, sql_objects, HeaderTabsProps, SqlObjectsProps};
 use crate::tui::components::Title;
 
 pub(crate) const NUM_HEADERS: i32 = 4;
@@ -76,10 +75,10 @@ fn App<B: Backend>(cx: Scope) -> impl View<B> {
 
     move || {
         view! { cx,
-            <column>
+            <Column>
                 <HeaderTabs titles=titles length=2/>
                 <TabContent titles=titles/>
-            </column>
+            </Column>
         }
     }
 }
@@ -102,7 +101,7 @@ fn TabContent<B: Backend>(
                         <Case key=i when=move || focus_selector.get().as_deref() == Some(id)>
                             {move || view! {cx,
                                 <SqlObjects key=i title=text id=id/>
-                            }.into_boxed_view()}
+                            }}
                         </Case>
                     }
                 }).collect())}

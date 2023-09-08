@@ -63,21 +63,21 @@ impl From<ListItemType> for ListItem<'static> {
         match val {
             ListItemType::Entry(title, foreground) => {
                 prop! {
-                    <listItem style=prop!(<style fg=foreground/>)>
+                    <ListItem style=prop!(<Style fg=foreground/>)>
                         {format!(" {title}")}
-                    </listItem>
+                    </ListItem>
                 }
             }
 
             ListItemType::Header(title) => {
                 prop! {
-                    <listItem>
-                        <text style=prop!(<style
+                    <ListItem>
+                        <Text style=prop!(<Style
                             fg=Color::Blue
                             add_modifier=Modifier::BOLD | Modifier::UNDERLINED/>)>
                             {title}
-                        </text>
-                    </listItem>
+                        </Text>
+                    </ListItem>
                 }
             }
         }
@@ -165,10 +165,10 @@ pub fn ObjectsList<B: Backend>(
 
     move || {
         view! { cx,
-            <stateful_list
+            <StatefulList
                 block=panel(title, focused.get())
                 highlight_style=prop!{
-                    <style
+                    <Style
                         fg=selected_color()
                         bg=Color::Black
                         add_modifier=Modifier::BOLD
@@ -177,7 +177,7 @@ pub fn ObjectsList<B: Backend>(
                 state=prop!(<ListState with_selected=Some(real_index.get())/>)
             >
                 {items.get().into_iter().map(Into::into).collect::<Vec<_>>()}
-            </stateful_list>
+            </StatefulList>
         }
     }
 }

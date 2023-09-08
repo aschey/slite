@@ -13,14 +13,14 @@ pub fn panel(title: &'static str, focused: bool) -> Block {
     };
 
     prop! {
-        <block
+        <Block
             borders=Borders::ALL
             border_type=BorderType::Rounded
-            border_style=prop!(<style fg=border_fg/>)
+            border_style=prop!(<Style fg=border_fg/>)
             title=prop! {
-                <span style=prop!(<style fg=Color::Reset add_modifier=modifier/>)>
+                <Span style=prop!(<Style fg=Color::Reset add_modifier=modifier/>)>
                     {title}
-                </span>
+                </Span>
             }
         />
     }

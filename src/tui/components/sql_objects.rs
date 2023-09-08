@@ -7,7 +7,7 @@ use rooibos::reactive::{create_signal, IntoSignal, Scope, SignalGet, SignalUpdat
 use rooibos::runtime::{use_event_context, use_focus_context};
 
 use crate::tui::components::{
-    ObjectsList, ObjectsListProps, Sql, SqlProps, StyledObject, StyledObjects,
+    objects_list, sql, ObjectsListProps, SqlProps, StyledObject, StyledObjects,
 };
 use crate::ObjectType;
 
@@ -67,10 +67,10 @@ pub fn SqlObjects<B: Backend>(cx: Scope, title: &'static str, id: &'static str) 
 
     move || {
         view! { cx,
-            <row>
+            <Row>
                 <ObjectsList title=title objects=objects focused=objects_focused length=10/>
                 <Sql sql_text=sql_view focused=sql_focused/>
-            </row>
+            </Row>
         }
     }
 }

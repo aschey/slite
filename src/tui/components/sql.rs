@@ -11,9 +11,9 @@ pub fn Sql<B: Backend>(
 ) -> impl View<B> {
     move || {
         view! { cx,
-            <paragraph block=panel("SQL", focused.get())>
+            <Paragraph block=panel("SQL", focused.get())>
                 {sql_text.get()}
-            </paragraph>
+            </Paragraph>
         }
     }
 }

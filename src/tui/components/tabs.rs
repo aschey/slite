@@ -50,13 +50,13 @@ pub fn HeaderTabs<B: Backend>(
 
     move || {
         view! { cx,
-            <tabs
+            <Tabs
                 select=current_tab_index.get() as usize
-                divider=prop!(<span style=prop!(<style fg=Color::Gray/>)>"|"</span>)
+                divider=prop!(<Span style=prop!(<Style fg=Color::Gray/>)>"|"</Span>)
                 block=prop! {
-                    <block
+                    <Block
                         borders=Borders::BOTTOM
-                        border_style=prop!(<style fg=Color::DarkGray/>)
+                        border_style=prop!(<Style fg=Color::DarkGray/>)
                         border_type=BorderType::Rounded
                     />}
                 > {
@@ -65,7 +65,7 @@ pub fn HeaderTabs<B: Backend>(
                             title(t.icon, t.text, focused_id.get().as_deref() == Some(id)))
                         .collect())
                 }
-            </tabs>
+            </Tabs>
         }
     }
 }
@@ -73,20 +73,20 @@ pub fn HeaderTabs<B: Backend>(
 fn title<'a>(icon: &'a str, text: &'a str, selected: bool) -> Line<'a> {
     if selected {
         prop! {
-            <line>
-                <span style=prop!(<style fg=Color::Cyan/>)>{icon}</span>
-                <span style=prop!(<style fg=Color::White add_modifier=Modifier::BOLD/>)>
+            <Line>
+                <Span style=prop!(<Style fg=Color::Cyan/>)>{icon}</Span>
+                <Span style=prop!(<Style fg=Color::White add_modifier=Modifier::BOLD/>)>
                     {text}
-                </span>
-            </line>
+                </Span>
+            </Line>
         }
     } else {
         prop! {
-            <line>
-                <span style=prop!(<style fg=Color::DarkGray/>)>
+            <Line>
+                <Span style=prop!(<Style fg=Color::DarkGray/>)>
                     {format!("{icon}{text}")}
-                </span>
-            </line>
+                </Span>
+            </Line>
         }
     }
 }
