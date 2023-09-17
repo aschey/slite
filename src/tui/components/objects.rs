@@ -129,7 +129,7 @@ pub fn ObjectsList<B: Backend>(
             return;
         }
 
-        adjusted_index.update(|i| *i = (*i + delta).rem_euclid(adjusted_size()));
+        adjusted_index.update(|i| (*i + delta).rem_euclid(adjusted_size()));
 
         let mut next_index = (real_index.get() as i32 + delta).rem_euclid(items.get().len() as i32);
         let next_real_index = loop {

@@ -58,7 +58,7 @@ pub fn SqlObjects<B: Backend>(cx: Scope, title: &'static str, id: &'static str) 
 
     event_context.create_key_effect(cx, move |key_event| {
         if focused.get() && key_event.code == KeyCode::Tab {
-            focused_index.update(|s| *s = (*s + 1).rem_euclid(2));
+            focused_index.update(|s| (*s + 1).rem_euclid(2));
         }
     });
 
