@@ -68,7 +68,7 @@ pub fn SqlObjects<B: Backend>(cx: Scope, title: &'static str, id: &'static str) 
     move || {
         view! { cx,
             <Row>
-                <ObjectsList title=title objects=objects focused=objects_focused length=10/>
+                <ObjectsList v:length=10 title=title objects=objects focused=objects_focused />
                 <Sql sql_text=sql_view focused=sql_focused/>
             </Row>
         }

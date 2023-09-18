@@ -52,11 +52,11 @@ pub fn HeaderTabs<B: Backend>(
         view! { cx,
             <Tabs
                 select=current_tab_index.get() as usize
-                divider=prop!(<Span style=prop!(<Style fg=Color::Gray/>)>"|"</Span>)
+                divider=prop!(<Span gray>"|"</Span>)
                 block=prop! {
                     <Block
                         borders=Borders::BOTTOM
-                        border_style=prop!(<Style fg=Color::DarkGray/>)
+                        border_style=prop!(<Style dark_gray/>)
                         border_type=BorderType::Rounded
                     />}
                 > {
@@ -74,18 +74,14 @@ fn title<'a>(icon: &'a str, text: &'a str, selected: bool) -> Line<'a> {
     if selected {
         prop! {
             <Line>
-                <Span style=prop!(<Style fg=Color::Cyan/>)>{icon}</Span>
-                <Span style=prop!(<Style fg=Color::White add_modifier=Modifier::BOLD/>)>
-                    {text}
-                </Span>
+                <Span cyan>{icon}</Span>
+                <Span white bold>{text}</Span>
             </Line>
         }
     } else {
         prop! {
             <Line>
-                <Span style=prop!(<Style fg=Color::DarkGray/>)>
-                    {format!("{icon}{text}")}
-                </Span>
+                <Span dark_gray>{format!("{icon}{text}")}</Span>
             </Line>
         }
     }

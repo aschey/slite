@@ -18,7 +18,7 @@ pub fn panel(title: &'static str, focused: bool) -> Block {
             border_type=BorderType::Rounded
             border_style=prop!(<Style fg=border_fg/>)
             title=prop! {
-                <Span style=prop!(<Style fg=Color::Reset add_modifier=modifier/>)>
+                <Span reset add_modifier=modifier>
                     {title}
                 </Span>
             }

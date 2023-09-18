@@ -63,7 +63,7 @@ impl From<ListItemType> for ListItem<'static> {
         match val {
             ListItemType::Entry(title, foreground) => {
                 prop! {
-                    <ListItem style=prop!(<Style fg=foreground/>)>
+                    <ListItem fg=foreground>
                         {format!(" {title}")}
                     </ListItem>
                 }
@@ -72,9 +72,7 @@ impl From<ListItemType> for ListItem<'static> {
             ListItemType::Header(title) => {
                 prop! {
                     <ListItem>
-                        <Text style=prop!(<Style
-                            fg=Color::Blue
-                            add_modifier=Modifier::BOLD | Modifier::UNDERLINED/>)>
+                        <Text style=prop!(<Style blue bold underlined/>)>
                             {title}
                         </Text>
                     </ListItem>
@@ -174,7 +172,7 @@ pub fn ObjectsList<B: Backend>(
                         add_modifier=Modifier::BOLD
                     />
                 }
-                state=prop!(<ListState with_selected=Some(real_index.get())/>)
+                v:state=prop!(<ListState with_selected=Some(real_index.get())/>)
             >
                 {items.get().into_iter().map(Into::into).collect::<Vec<_>>()}
             </StatefulList>

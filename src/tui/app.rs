@@ -76,7 +76,7 @@ fn App<B: Backend>(cx: Scope) -> impl View<B> {
     move || {
         view! { cx,
             <Column>
-                <HeaderTabs titles=titles length=2/>
+                <HeaderTabs titles=titles v:length=2/>
                 <TabContent titles=titles/>
             </Column>
         }
@@ -94,13 +94,13 @@ fn TabContent<B: Backend>(
     move || {
         view! { cx,
             <Switch>
-                {titles.with_value(|t| t.iter().enumerate().map(|(i, (id, title))| {
+                {titles.with_value(|t| t.iter().map(|(id, title)| {
                     let id = *id;
                     let text = title.text;
                     prop! {
-                        <Case key=i when=move || focus_selector.get().as_deref() == Some(id)>
+                        <Case v:key=id when=move || focus_selector.get().as_deref() == Some(id)>
                             {move || view! {cx,
-                                <SqlObjects key=i title=text id=id/>
+                                <SqlObjects v:key=id title=text id=id/>
                             }}
                         </Case>
                     }
