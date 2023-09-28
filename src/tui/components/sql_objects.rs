@@ -12,9 +12,9 @@ use crate::tui::components::{
 use crate::ObjectType;
 
 #[component]
-pub fn SqlObjects<B: Backend>(cx: Scope, title: &'static str, id: &'static str) -> impl View<B> {
+pub fn SqlObjects(cx: Scope, title: &'static str, id: &'static str) -> impl View {
     let focus_context = use_focus_context::<String>(cx);
-    let focused = focus_context.create_focus_handler(id);
+    let focused = focus_context.create_focus_handler(cx, id);
 
     let focused_index = create_signal(cx, 0usize);
 
@@ -58,7 +58,7 @@ pub fn SqlObjects<B: Backend>(cx: Scope, title: &'static str, id: &'static str) 
 
     event_context.create_key_effect(cx, move |key_event| {
         if focused.get() && key_event.code == KeyCode::Tab {
-            focused_index.update(|s| (*s + 1).rem_euclid(2));
+            focused_index.update(|s| (s + 1).rem_euclid(2));
         }
     });
 

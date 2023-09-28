@@ -83,12 +83,12 @@ impl From<ListItemType> for ListItem<'static> {
 }
 
 #[component]
-pub fn ObjectsList<B: Backend>(
+pub fn ObjectsList(
     cx: Scope,
     title: &'static str,
     #[prop(into)] focused: ReadSignal<bool>,
     #[prop(into)] objects: ReadSignal<StyledObjects>,
-) -> impl View<B> {
+) -> impl View {
     let event_provider = use_event_context(cx);
 
     let adjusted_index = create_signal(cx, 0i32);
@@ -127,7 +127,7 @@ pub fn ObjectsList<B: Backend>(
             return;
         }
 
-        adjusted_index.update(|i| (*i + delta).rem_euclid(adjusted_size()));
+        adjusted_index.update(|i| (i + delta).rem_euclid(adjusted_size()));
 
         let mut next_index = (real_index.get() as i32 + delta).rem_euclid(items.get().len() as i32);
         let next_real_index = loop {

@@ -14,10 +14,10 @@ pub struct Title<'a> {
 }
 
 #[component]
-pub fn HeaderTabs<B: Backend>(
+pub fn HeaderTabs(
     cx: Scope,
     titles: StoredValue<IndexMap<&'static str, Title<'static>>>,
-) -> impl View<B> {
+) -> impl View {
     let focus_context = use_focus_context::<String>(cx);
     let focused_id = focus_context.get_focus_selector();
     focus_context.set_focus(titles.with_value(|t| t.keys().next().copied()));

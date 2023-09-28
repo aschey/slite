@@ -1,3 +1,4 @@
+use std::backtrace::Backtrace;
 use std::io::stdout;
 
 use crossterm::execute;
@@ -20,6 +21,14 @@ pub async fn run_tui(cx: Scope) {
     enable_raw_mode().unwrap();
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen).unwrap();
+
+    std::panic::set_hook(Box::new(|panic_info| {
+        crossterm::execute!(std::io::stderr(), crossterm::terminal::LeaveAlternateScreen).unwrap();
+        crossterm::terminal::disable_raw_mode().unwrap();
+        let backtrace = Backtrace::capture();
+        println!("{panic_info} {backtrace}");
+    }));
+
     let backend = CrosstermBackend::new(stdout);
     let terminal = Terminal::new(backend).unwrap();
     let handler = EventHandler::initialize(cx, terminal);
@@ -33,7 +42,7 @@ pub async fn run_tui(cx: Scope) {
 }
 
 #[component]
-fn App<B: Backend>(cx: Scope) -> impl View<B> {
+fn App(cx: Scope) -> impl View {
     provide_focus_context::<String>(cx, Some("source".to_owned()));
     let titles = store_value(
         cx,
@@ -84,27 +93,22 @@ fn App<B: Backend>(cx: Scope) -> impl View<B> {
 }
 
 #[component]
-fn TabContent<B: Backend>(
-    cx: Scope,
-    titles: StoredValue<IndexMap<&'static str, Title<'static>>>,
-) -> impl View<B> {
+fn TabContent(cx: Scope, titles: StoredValue<IndexMap<&'static str, Title<'static>>>) -> impl View {
     let focus_context = use_focus_context::<String>(cx);
     let focus_selector = focus_context.get_focus_selector();
 
     move || {
         view! { cx,
             <Switch>
-                {titles.with_value(|t| t.iter().map(|(id, title)| {
+                {titles.get_value().iter().map(|(id, title)| {
                     let id = *id;
                     let text = title.text;
                     prop! {
                         <Case v:key=id when=move || focus_selector.get().as_deref() == Some(id)>
-                            {move || view! {cx,
-                                <SqlObjects v:key=id title=text id=id/>
-                            }}
+                            {view!(cx, <SqlObjects v:key=id title=text id=id/>)}
                         </Case>
                     }
-                }).collect())}
+                }).collect()}
             </Switch>
         }
     }
