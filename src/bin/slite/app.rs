@@ -19,7 +19,8 @@ use slite::{
 };
 use std::{
     fmt::Write,
-    fs, io,
+    fs,
+    io::{self, IsTerminal},
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -425,7 +426,7 @@ pub struct App {
 
 impl App {
     pub fn from_args() -> Result<Self, Report> {
-        owo_colors::set_override(atty::is(atty::Stream::Stdout));
+        owo_colors::set_override(io::stdout().is_terminal());
         color_eyre::install()?;
 
         let cli = Cli::parse();
@@ -447,7 +448,7 @@ impl App {
             Some(direct_path)
         } else {
             let git_root = match gix_discover::upwards_opts(
-                ".",
+                Path::new("."),
                 gix_discover::upwards::Options {
                     ceiling_dirs: vec![PathBuf::from("../../../..")],
                     ..Default::default()
@@ -501,7 +502,7 @@ impl App {
 
         let pager = if conf.pager.unwrap_or_default()
             && cli.command.is_some()
-            && atty::is(atty::Stream::Stdout)
+            && io::stdout().is_terminal()
         {
             let output = minus::Pager::new();
 

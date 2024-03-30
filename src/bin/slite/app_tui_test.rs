@@ -2,6 +2,12 @@ use crate::{app::Conf, app_tui::TuiApp};
 use confique::Config;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use elm_ui_tester::{TerminalView, UiTester};
+use ratatui::{
+    backend::TestBackend,
+    buffer::Buffer,
+    style::{Color, Modifier},
+    Terminal,
+};
 use serial_test::serial;
 use slite::{
     read_extension_dir, read_sql_files,
@@ -11,12 +17,6 @@ use tempfile::TempDir;
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::{filter::Targets, prelude::*, reload, Layer, Registry};
 use tracing_tree2::HierarchicalLayer;
-use tui::{
-    backend::TestBackend,
-    buffer::Buffer,
-    style::{Color, Modifier},
-    Terminal,
-};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_load() {

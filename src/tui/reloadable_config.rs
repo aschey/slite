@@ -48,7 +48,7 @@ impl<T: Config + Debug + Send + Sync + 'static> ReloadableConfig<T> {
         let current_config = Arc::new(ArcSwap::new(Arc::new(handler.create_config(&path))));
 
         let current_config_ = current_config.clone();
-        let mut debouncer = new_debouncer(Duration::from_millis(250), None, move |events| {
+        let mut debouncer = new_debouncer(Duration::from_millis(250), move |events| {
             if let Ok(events) = events {
                 let new_config = Arc::new(handler.create_config(&path));
                 let previous_config = current_config_.load_full();

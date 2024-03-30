@@ -6,20 +6,16 @@ use crossterm::{
     },
 };
 use elm_ui::{Command, Message, Model, OptionalCommand, Program};
+use ratatui::{
+    backend::{Backend, CrosstermBackend},
+    Terminal,
+};
 use slite::{
     error::RefreshError,
     tui::{AppState, MigratorFactory, ReloadableConfig},
 };
-use std::{
-    io::{self},
-    marker::PhantomData,
-    path::PathBuf,
-};
+use std::{io, marker::PhantomData, path::PathBuf, rc::Rc};
 use tracing_subscriber::{filter::Targets, reload::Handle, Registry};
-use tui::{
-    backend::{Backend, CrosstermBackend},
-    Terminal,
-};
 
 use crate::app::{Conf, ConfigStore};
 
@@ -103,7 +99,7 @@ impl<'a, B: Backend> Model for TuiApp<'a, B> {
         Ok(Some(Command::simple(Message::Batch(cmds))))
     }
 
-    fn update(&mut self, msg: std::sync::Arc<Message>) -> Result<OptionalCommand, Self::Error> {
+    fn update(&mut self, msg: Rc<Message>) -> Result<OptionalCommand, Self::Error> {
         let cmd = self.state.update(msg.clone()).unwrap();
         if let Message::Custom(msg) = msg.as_ref() {
             if let Some(msg) = msg.downcast_ref::<TuiAppMessage>() {

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use tui::{
+use ratatui::{
     style::{Color, Modifier, Style},
     text::Text,
     widgets::{Block, List, ListItem, ListState, StatefulWidget},
@@ -24,8 +24,8 @@ impl<'a> StatefulWidget for Objects<'a> {
 
     fn render(
         self,
-        area: tui::layout::Rect,
-        buf: &mut tui::buffer::Buffer,
+        area: ratatui::layout::Rect,
+        buf: &mut ratatui::buffer::Buffer,
         state: &mut Self::State,
     ) {
         let items: Vec<ListItem> = state.objects.iter().map(|i| i.clone().into()).collect();

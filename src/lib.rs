@@ -32,7 +32,6 @@ use error::{InitializationError, MigrationError, QueryError};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::{
-    cmp::Ordering,
     collections::BTreeMap,
     fmt::Debug,
     path::PathBuf,
@@ -588,17 +587,19 @@ pub struct Object {
 
 impl PartialOrd for Object {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.object_type.partial_cmp(&other.object_type) {
-            Some(core::cmp::Ordering::Equal) => {}
-            ord => return ord,
-        }
-        self.name.partial_cmp(&other.name)
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for Object {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+        // self.partial_cmp(other).unwrap_or(Ordering::Equal)
+        match self.object_type.partial_cmp(&other.object_type) {
+            Some(core::cmp::Ordering::Equal) => {}
+            Some(ord) => return ord,
+            None => {}
+        }
+        self.name.cmp(&other.name)
     }
 }
 

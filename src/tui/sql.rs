@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::rc::Rc;
 
 use super::{
     panel, BiPanel, BiPanelState, Objects, ObjectsState, Scrollable, ScrollableState, StyledObject,
@@ -7,7 +7,7 @@ use super::{
 use crate::{diff_metadata, error::SqlFormatError, Metadata, MigrationMetadata, SqlPrinter};
 use ansi_to_tui::IntoText;
 use elm_ui::{Message, Model, OptionalCommand};
-use tui::{
+use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
     style::Color,
@@ -31,8 +31,8 @@ impl<'a> StatefulWidget for SqlView<'a> {
 
     fn render(
         self,
-        area: tui::layout::Rect,
-        buf: &mut tui::buffer::Buffer,
+        area: ratatui::layout::Rect,
+        buf: &mut ratatui::buffer::Buffer,
         state: &mut Self::State,
     ) {
         let chunks = Layout::default()
@@ -164,7 +164,7 @@ impl<'a> SqlState<'a> {
     }
 
     fn new(title: &'a str, sql: Vec<Text<'static>>, state: ObjectsState) -> Self {
-        let height = sql.get(0).map(|s| s.height()).unwrap_or(0) as u16;
+        let height = sql.first().map(|s| s.height()).unwrap_or(0) as u16;
         let scroller = ScrollableState::new(height);
         Self {
             sql,
@@ -271,7 +271,7 @@ impl<'a> Model for SqlState<'a> {
     fn init(&mut self) -> Result<OptionalCommand, Self::Error> {
         Ok(None)
     }
-    fn update(&mut self, msg: Arc<Message>) -> Result<OptionalCommand, Self::Error> {
+    fn update(&mut self, msg: Rc<Message>) -> Result<OptionalCommand, Self::Error> {
         if let Message::TermEvent(msg) = msg.as_ref() {
             self.handle_event(msg);
         }

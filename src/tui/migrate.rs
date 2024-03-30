@@ -6,16 +6,16 @@ use ansi_to_tui::IntoText;
 use chrono::Local;
 use elm_ui::{Command, Message, Model, OptionalCommand};
 use futures::StreamExt;
-use std::{marker::PhantomData, sync::Arc};
-use tokio_stream::wrappers::BroadcastStream;
-use tracing::error;
-use tui::{
+use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Span, Spans, Text},
+    text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Clear, Paragraph, StatefulWidget, Widget, Wrap},
 };
+use std::{marker::PhantomData, rc::Rc};
+use tokio_stream::wrappers::BroadcastStream;
+use tracing::error;
 
 use super::{
     panel, BiPanel, BiPanelState, BroadcastWriter, Button, MigratorFactory, Scrollable,
@@ -38,8 +38,8 @@ impl<'a> StatefulWidget for MigrationView<'a> {
 
     fn render(
         self,
-        area: tui::layout::Rect,
-        buf: &mut tui::buffer::Buffer,
+        area: ratatui::layout::Rect,
+        buf: &mut ratatui::buffer::Buffer,
         state: &mut Self::State,
     ) {
         let chunks = Layout::default()
@@ -48,31 +48,31 @@ impl<'a> StatefulWidget for MigrationView<'a> {
             .split(area);
 
         Paragraph::new(vec![
-            Spans::from(
+            Line::from(
                 Button::new("   Dry Run         ")
                     .fg(Color::Blue)
                     .selected(state.selected == 0)
                     .enabled(state.controls_enabled)
                     .build(),
             ),
-            Spans::from(""),
-            Spans::from(
+            Line::from(""),
+            Line::from(
                 Button::new("   Generate Script ")
                     .fg(Color::Blue)
                     .selected(state.selected == 1)
                     .enabled(state.controls_enabled)
                     .build(),
             ),
-            Spans::from(""),
-            Spans::from(
+            Line::from(""),
+            Line::from(
                 Button::new("   Migrate         ")
                     .fg(Color::Green)
                     .selected(state.selected == 2)
                     .enabled(state.controls_enabled)
                     .build(),
             ),
-            Spans::from(""),
-            Spans::from(
+            Line::from(""),
+            Line::from(
                 Button::new("   Clear Output     ")
                     .fg(Color::Magenta)
                     .selected(state.selected == 3)
@@ -92,11 +92,11 @@ impl<'a> StatefulWidget for MigrationView<'a> {
 
         if state.show_popup {
             let text = Paragraph::new(vec![
-                Spans::from(vec![Span::from("Run database migration?")]),
-                Spans::from(""),
+                Line::from(vec![Span::from("Run database migration?")]),
+                Line::from(""),
             ])
             .wrap(Wrap { trim: false });
-            let buttons = Paragraph::new(Spans::from(vec![
+            let buttons = Paragraph::new(Line::from(vec![
                 Button::new("  Cancel ")
                     .fg(Color::Yellow)
                     .selected(state.popup_button_index == 0)
@@ -389,7 +389,7 @@ impl<'a> Model for MigrationState<'a> {
         )))
     }
 
-    fn update(&mut self, msg: Arc<Message>) -> Result<OptionalCommand, Self::Error> {
+    fn update(&mut self, msg: Rc<Message>) -> Result<OptionalCommand, Self::Error> {
         match msg.as_ref() {
             Message::TermEvent(msg) => {
                 if let Some(func) = self.handle_event(msg).unwrap() {

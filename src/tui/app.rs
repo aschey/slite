@@ -4,15 +4,15 @@ use crate::{
     Config,
 };
 use elm_ui::{Command, Message, Model, OptionalCommand};
-use std::{io::Stdout, marker::PhantomData, path::PathBuf, sync::Arc};
-use tui::{
+use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, StatefulWidget, Tabs, Widget},
     Terminal,
 };
+use std::{io::Stdout, marker::PhantomData, path::PathBuf, rc::Rc};
 
 #[derive(PartialEq, Eq)]
 pub enum ControlFlow {
@@ -36,8 +36,8 @@ impl<'a> StatefulWidget for App<'a> {
 
     fn render(
         self,
-        area: tui::layout::Rect,
-        buf: &mut tui::buffer::Buffer,
+        area: ratatui::layout::Rect,
+        buf: &mut ratatui::buffer::Buffer,
         state: &mut Self::State,
     ) {
         let chunks = Layout::default()
@@ -49,13 +49,13 @@ impl<'a> StatefulWidget for App<'a> {
         let block = Block::default().style(Style::default());
         block.render(area, buf);
 
-        let titles = state
+        let titles: Vec<_> = state
             .titles
             .iter()
             .enumerate()
             .map(|(i, t)| {
                 if i as i32 == state.index {
-                    Spans::from(vec![
+                    Line::from(vec![
                         Span::styled(t.icon, Style::default().fg(Color::Cyan)),
                         Span::styled(
                             t.text,
@@ -65,7 +65,7 @@ impl<'a> StatefulWidget for App<'a> {
                         ),
                     ])
                 } else {
-                    Spans::from(vec![Span::styled(
+                    Line::from(vec![Span::styled(
                         format!("{}{}", t.icon, t.text),
                         Style::default().fg(Color::Black),
                     )])
@@ -81,6 +81,7 @@ impl<'a> StatefulWidget for App<'a> {
             )
             .select(state.index as usize)
             .style(Style::default())
+            .highlight_style(Style::default())
             .divider(Span::styled("|", Style::default().fg(Color::Gray)));
         tabs.render(chunks[0], buf);
 
@@ -220,7 +221,7 @@ impl<'a> Model for AppState<'a> {
         Ok(self.migration.init().unwrap())
     }
 
-    fn update(&mut self, msg: Arc<elm_ui::Message>) -> Result<OptionalCommand, Self::Error> {
+    fn update(&mut self, msg: Rc<elm_ui::Message>) -> Result<OptionalCommand, Self::Error> {
         let mut cmds = vec![];
 
         match self.index {

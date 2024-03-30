@@ -67,7 +67,7 @@ impl From<Color> for owo_colors::AnsiColors {
 }
 
 #[cfg(feature = "tui")]
-impl From<Color> for tui::style::Color {
+impl From<Color> for ratatui::style::Color {
     fn from(value: Color) -> Self {
         match value {
             Color::Black => Self::Black,

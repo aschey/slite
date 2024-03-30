@@ -1,4 +1,4 @@
-use tui::widgets::{Paragraph, StatefulWidget, Widget};
+use ratatui::widgets::{Paragraph, StatefulWidget, Widget};
 
 pub struct Scrollable<'a> {
     paragraph: Paragraph<'a>,
@@ -15,8 +15,8 @@ impl<'a> StatefulWidget for Scrollable<'a> {
 
     fn render(
         self,
-        area: tui::layout::Rect,
-        buf: &mut tui::buffer::Buffer,
+        area: ratatui::layout::Rect,
+        buf: &mut ratatui::buffer::Buffer,
         state: &mut Self::State,
     ) {
         let area_height = area.height - 2;
