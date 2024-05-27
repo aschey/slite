@@ -13,7 +13,6 @@ use normpath::PathExt;
 use notify_debouncer_mini::DebouncedEvent;
 use owo_colors::OwoColorize;
 use regex::Regex;
-use rooibos::reactive::Scope;
 use rusqlite::Connection;
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
@@ -308,8 +307,8 @@ impl App {
         })
     }
 
-    pub async fn run(self, cx: Scope) -> Result<(), Report> {
-        run_tui(cx).await;
+    pub async fn run(self) -> Result<(), Report> {
+        run_tui().await?;
         Ok(())
     }
 }

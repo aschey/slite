@@ -2,14 +2,8 @@
 mod app;
 
 #[cfg(feature = "application")]
-pub fn main() -> Result<(), color_eyre::eyre::Report> {
-    rooibos::runtime::run_system(run)?;
-    Ok(())
-}
-
-#[cfg(feature = "application")]
-#[tokio::main]
-pub async fn run(cx: rooibos::reactive::Scope) -> Result<(), color_eyre::eyre::Report> {
+#[rooibos::main]
+pub async fn main() -> Result<(), color_eyre::eyre::Report> {
     use tilia::tower_rpc::transport::ipc::{self, OnConflict, SecurityAttributes};
     use tilia::tower_rpc::transport::CodecTransport;
     use tilia::tower_rpc::LengthDelimitedCodec;
@@ -40,7 +34,7 @@ pub async fn run(cx: rooibos::reactive::Scope) -> Result<(), color_eyre::eyre::R
         .init();
 
     let app = app::App::from_args()?;
-    app.run(cx).await?;
+    app.run().await?;
     guard.stop().await.ok();
     Ok(())
 }

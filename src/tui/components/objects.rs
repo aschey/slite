@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
 
-use crossterm::event::KeyCode;
-use rooibos::prelude::*;
-use rooibos::reactive::{create_memo, create_signal, ReadSignal, Scope, SignalGet, SignalUpdate};
-use rooibos::runtime::use_event_context;
+use rooibos::components::{ListView, WrappingList};
+use rooibos::dom::{derive_signal, KeyCode, Render};
+use rooibos::reactive::computed::Memo;
+use rooibos::reactive::signal::{ReadSignal, RwSignal};
+use rooibos::reactive::traits::{Get, Set, Update};
+use rooibos::tui::style::{Color, Modifier, Style, Stylize};
+use rooibos::tui::widgets::ListItem;
 
 use crate::tui::components::panel;
-use crate::tui::NUM_HEADERS;
 use crate::ObjectType;
 
 #[derive(Clone)]
@@ -62,57 +64,45 @@ impl From<ListItemType> for ListItem<'static> {
     fn from(val: ListItemType) -> Self {
         match val {
             ListItemType::Entry(title, foreground) => {
-                prop! {
-                    <ListItem fg=foreground>
-                        {format!(" {title}")}
-                    </ListItem>
-                }
+                ListItem::new(format!(" {title}")).fg(foreground)
             }
 
             ListItemType::Header(title) => {
-                prop! {
-                    <ListItem>
-                        <Text style=prop!(<Style blue bold underlined/>)>
-                            {title}
-                        </Text>
-                    </ListItem>
-                }
+                ListItem::new(title).style(Style::new().blue().bold().underlined())
             }
         }
     }
 }
 
-#[component]
-pub fn ObjectsList(
-    cx: Scope,
-    title: &'static str,
-    #[prop(into)] focused: ReadSignal<bool>,
-    #[prop(into)] objects: ReadSignal<StyledObjects>,
-) -> impl View {
-    let event_provider = use_event_context(cx);
+const NUM_HEADERS: i32 = 4;
 
-    let adjusted_index = create_signal(cx, 0i32);
-    let real_index = create_signal(cx, 1usize);
+pub fn objects_list(title: &'static str, objects: ReadSignal<StyledObjects>) -> impl Render {
+    let adjusted_index = RwSignal::new(0i32);
+    let real_index = RwSignal::new(Some(1usize));
 
-    let items = create_memo(cx, move || {
+    let focused = RwSignal::new(false);
+
+    let items = Memo::new(move |_| {
         let objects = objects.get();
-        vec![]
-            .into_iter()
-            .chain([ListItemType::Header("Tables".to_owned())])
-            .chain(objects.tables().iter().map(Into::into))
-            .chain([ListItemType::Header("Indexes".to_owned())])
-            .chain(objects.indexes().iter().map(Into::into))
-            .chain([ListItemType::Header("Views".to_owned())])
-            .chain(objects.views().iter().map(Into::into))
-            .chain([ListItemType::Header("Triggers".to_owned())])
-            .chain(objects.triggers().iter().map(Into::into))
-            .collect::<Vec<_>>()
+        WrappingList(
+            vec![]
+                .into_iter()
+                .chain([ListItemType::Header("Tables".to_owned())])
+                .chain(objects.tables().iter().map(Into::into))
+                .chain([ListItemType::Header("Indexes".to_owned())])
+                .chain(objects.indexes().iter().map(Into::into))
+                .chain([ListItemType::Header("Views".to_owned())])
+                .chain(objects.views().iter().map(Into::into))
+                .chain([ListItemType::Header("Triggers".to_owned())])
+                .chain(objects.triggers().iter().map(Into::into))
+                .collect::<Vec<_>>(),
+        )
     });
 
     let selected_color = move || -> Color {
         match items
             .get()
-            .get(real_index.get())
+            .get(real_index.get().unwrap())
             .expect("Item not selected")
         {
             ListItemType::Entry(_, color) => color.to_owned(),
@@ -127,9 +117,10 @@ pub fn ObjectsList(
             return;
         }
 
-        adjusted_index.update(|i| (i + delta).rem_euclid(adjusted_size()));
+        adjusted_index.update(|i| *i = (*i + delta).rem_euclid(adjusted_size()));
 
-        let mut next_index = (real_index.get() as i32 + delta).rem_euclid(items.get().len() as i32);
+        let mut next_index =
+            (real_index.get().unwrap() as i32 + delta).rem_euclid(items.get().len() as i32);
         let next_real_index = loop {
             match items.get().get(next_index as usize) {
                 Some(ListItemType::Entry { .. }) => {
@@ -144,38 +135,39 @@ pub fn ObjectsList(
         real_index.set(next_real_index as usize);
     };
 
+    let block = derive_signal!(panel(title, focused.get()));
+    let highlight_style = derive_signal!(
+        Style::new()
+            .fg(selected_color())
+            .bg(Color::Black)
+            .add_modifier(Modifier::BOLD)
+    );
+
     let next = move || adjust_position(1);
     let previous = move || adjust_position(-1);
 
-    event_provider.create_key_effect(cx, move |key_event| {
-        if focused.get() {
-            match key_event.code {
-                KeyCode::Down => {
-                    next();
-                }
-                KeyCode::Up => {
-                    previous();
-                }
-                _ => {}
+    ListView::new()
+        .block(block)
+        .highlight_style(highlight_style)
+        .on_focus(move |_| {
+            focused.set(true);
+        })
+        .on_blur(move |_| {
+            focused.set(false);
+        })
+        .on_key_down(move |event, _| match event.code {
+            KeyCode::Down => {
+                next();
             }
-        }
-    });
-
-    move || {
-        view! { cx,
-            <StatefulList
-                block=panel(title, focused.get())
-                highlight_style=prop!{
-                    <Style
-                        fg=selected_color()
-                        bg=Color::Black
-                        add_modifier=Modifier::BOLD
-                    />
-                }
-                v:state=prop!(<ListState with_selected=Some(real_index.get())/>)
-            >
-                {items.get().into_iter().map(Into::into).collect::<Vec<_>>()}
-            </StatefulList>
-        }
-    }
+            KeyCode::Up => {
+                previous();
+            }
+            _ => {}
+        })
+        .on_item_click(move |i, v| {
+            if matches!(v, ListItemType::Entry(_, _)) {
+                real_index.set(Some(i));
+            }
+        })
+        .render(real_index, items)
 }

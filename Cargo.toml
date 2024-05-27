@@ -11,7 +11,7 @@ version = "0.0.1-dev"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ansi-to-tui = "3.1.0"
+ansi-to-tui = "4"
 arc-swap = { version = "1.6.0", optional = true }
 atty = { version = "0.2.14", optional = true }
 chrono = { version = "0.4.26", optional = true }
@@ -22,7 +22,6 @@ confique = { version = "0.2.4", default-features = false, features = [
   "toml",
 ], optional = true }
 content_inspector = { version = "0.2.4", optional = true }
-crossterm = { version = "0.27", optional = true }
 futures = { version = "0.3.28", optional = true }
 gix-discover = { version = "0.21.1", optional = true }
 ignore = { version = "0.4.20", optional = true }
@@ -35,7 +34,6 @@ notify = { version = "6.0.1", default_features = false, features = [
 notify-debouncer-mini = { version = "0.3.0", default_features = false, optional = true }
 once_cell = "1"
 owo-colors = { version = "3", features = ["supports-colors"], optional = true }
-ratatui = { git = "https://github.com/ratatui-org/ratatui", rev = "301366c4fa33524b0634bbd3dcf1abd1a1ebe7c6", optional = true }
 regex = "1"
 rooibos = { path = "../rooibos/crates/rooibos", optional = true }
 rusqlite = { version = "0.29", features = ["bundled", "load_extension"] }
@@ -67,8 +65,6 @@ indexmap = { version = "2", optional = true }
 application = [
   "clap",
   "clap_complete",
-  "crossterm-events",
-  "crossterm/event-stream",
   "diff",
   "pretty-print",
   "read-files",
@@ -88,21 +84,18 @@ application = [
   "atty",
   "normpath",
 ]
-crossterm-events = ["crossterm"]
 default = ["application"]
-diff = ["imara-diff"]
-pretty-print = ["owo-colors", "syntect"]
-read-files = ["ignore", "content_inspector"]
+diff = ["dep:imara-diff"]
+pretty-print = ["dep:owo-colors", "dep:syntect"]
+read-files = ["dep:ignore", "dep:content_inspector"]
 tui = [
-  "ratatui",
-  "tokio",
-  "tokio-stream",
-  "tracing-subscriber",
-  "crossterm",
+  "dep:tokio",
+  "dep:tokio-stream",
+  "dep:tracing-subscriber",
   "read-files",
-  "chrono",
-  "rooibos",
-  "indexmap",
+  "dep:chrono",
+  "dep:rooibos",
+  "dep:indexmap",
 ]
 
 [dev-dependencies]
