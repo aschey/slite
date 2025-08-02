@@ -7,12 +7,12 @@ expression: view
  ────────────────────────────────────────────────────────────────────────────── 
  ╭Source──────────────────────╮╭SQL───────────────────────────────────────────╮ 
  │Tables                      ││CREATE TABLE album (                          │ 
- │  album                     ││ album_id INTEGER PRIMARY KEY NOT NULL,       │ 
- │  album_artist              ││ album_name TEXT NOT NULL COLLATE NOCASE,     │ 
- │  artist                    ││ album_artist_id INTEGER NOT NULL,            │ 
- │  search_index              ││ created_date INTEGER NOT NULL,               │ 
- │  search_spellfix           ││ UNIQUE(album_name, album_artist_id)          │ 
- │  search_vocab              ││ FOREIGN KEY(album_artist_id) REFERENCES      │ 
+ │  album                     ││    album_id INTEGER PRIMARY KEY NOT NULL,    │ 
+ │  album_artist              ││    album_name TEXT NOT NULL COLLATE NOCASE,  │ 
+ │  artist                    ││    album_artist_id INTEGER NOT NULL,         │ 
+ │  search_index              ││    created_date INTEGER NOT NULL,            │ 
+ │  search_spellfix           ││    UNIQUE(album_name, album_artist_id)       │ 
+ │  search_vocab              ││    FOREIGN KEY(album_artist_id) REFERENCES   │ 
  │  song                      ││album_artist(album_artist_id)                 │ 
  │Indexes                     ││)                                             │ 
  │  idx_song_path             ││                                              │ 
@@ -50,6 +50,4 @@ expression: view
  │                            ││                                              │ 
  │                            ││                                              │ 
  │                            ││                                              │ 
- ╰────────────────────────────╯╰──────────────────────────────────────────────╯ 
-                                                                                
-
+ ╰────────────────────────────╯╰──────────────────────────────────────────────╯

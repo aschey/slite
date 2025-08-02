@@ -1,10 +1,11 @@
-use std::{collections::BTreeMap, ops::Deref};
+use std::collections::BTreeMap;
+use std::ops::Deref;
 
 use regex::Regex;
 use rusqlite::Connection;
 use tracing::Level;
 
-use crate::{query, Object, ObjectType, QueryError, SqlPrinter};
+use crate::{Object, ObjectType, QueryError, SqlPrinter, query};
 
 #[derive(Clone, Debug, Default)]
 pub struct Metadata(BTreeMap<ObjectType, BTreeMap<String, String>>);
@@ -50,7 +51,10 @@ impl Metadata {
         sql_printer: &mut SqlPrinter,
     ) -> Result<Metadata, QueryError> {
         let metadata_sql = |name: &str| {
-            format!("SELECT name, sql from sqlite_master WHERE type = '{name}' and name != 'sqlite_sequence' AND sql IS NOT NULL ORDER BY name")
+            format!(
+                "SELECT name, sql from sqlite_master WHERE type = '{name}' and name != \
+                 'sqlite_sequence' AND sql IS NOT NULL ORDER BY name"
+            )
         };
 
         let tables = select_metadata(

@@ -1,19 +1,20 @@
 use std::rc::Rc;
 
-use super::{
-    panel, BiPanel, BiPanelState, Objects, ObjectsState, Scrollable, ScrollableState, StyledObject,
-    StyledObjects,
-};
-use crate::{diff_metadata, error::SqlFormatError, Metadata, MigrationMetadata, SqlPrinter};
 use ansi_to_tui::IntoText;
 use elm_ui::{Message, Model, OptionalCommand};
-use ratatui::{
-    buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::Color,
-    text::Text,
-    widgets::{Paragraph, StatefulWidget, Wrap},
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::Color;
+use ratatui::text::Text;
+use ratatui::widgets::{Paragraph, StatefulWidget, Wrap};
+use tui_syntax_highlight::Highlighter;
+
+use super::{
+    BiPanel, BiPanelState, Objects, ObjectsState, Scrollable, ScrollableState, StyledObject,
+    StyledObjects, panel,
 };
+use crate::error::SqlFormatError;
+use crate::{Metadata, MigrationMetadata, SYNTAXES, THEMES, diff_metadata};
 
 #[derive(Debug, Clone)]
 pub struct SqlView<'a> {
@@ -114,14 +115,14 @@ impl<'a> SqlState<'a> {
         let list_items: Result<Vec<_>, _> = diffs
             .iter()
             .flat_map(|(_, objects)| {
-                objects.iter().map(|(_, diff)| {
+                objects.values().map(|diff| {
                     let text = if diff.diff_text.is_empty() {
                         diff.original_text.to_owned()
                     } else {
                         diff.diff_text.to_owned()
                     };
                     text.into_text()
-                        .map_err(|e| SqlFormatError::TextFormattingFailure(text, e))
+                        .map_err(|e| SqlFormatError::AnsiConversionFailure(text, e))
                 })
             })
             .collect();
@@ -136,8 +137,8 @@ impl<'a> SqlState<'a> {
             (
                 object_type.to_owned(),
                 objects
-                    .iter()
-                    .map(|(name, _)| StyledObject {
+                    .keys()
+                    .map(|name| StyledObject {
                         object: name.to_owned(),
                         foreground: Color::Reset,
                     })
@@ -146,16 +147,25 @@ impl<'a> SqlState<'a> {
         });
         let styled = StyledObjects::from_iter(objects);
         let state = ObjectsState::new(styled);
+        let theme = THEMES
+            .themes
+            .get("ansi")
+            .expect("Failed to load ansi theme");
+        let sql_syntax = SYNTAXES
+            .find_syntax_by_name("SQL")
+            .expect("Failed to load SQL syntax")
+            .to_owned();
+
+        let highlighter = Highlighter::new(theme.clone()).line_numbers(false);
 
         let list_items: Result<Vec<_>, _> = schema
             .iter()
             .flat_map(|(_, objects)| {
-                let mut printer = SqlPrinter::default();
-                objects.values().map(move |text| {
-                    printer
-                        .print(text)
-                        .into_text()
-                        .map_err(|e| SqlFormatError::TextFormattingFailure(text.to_owned(), e))
+                objects.values().map(|text| {
+                    Ok(highlighter
+                        .highlight_lines(text.clone(), &sql_syntax, &SYNTAXES)
+                        .map_err(|e| SqlFormatError::TextFormattingFailure(text.to_owned(), e))?
+                        .into_text())
                 })
             })
             .collect();

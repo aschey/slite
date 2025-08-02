@@ -1,15 +1,19 @@
-use crate::Color;
-use once_cell::sync::OnceCell;
+use std::sync::LazyLock;
+
 use owo_colors::{AnsiColors, OwoColorize};
-use syntect::{
-    easy::HighlightLines,
-    highlighting::{Style, ThemeSet},
-    parsing::SyntaxSet,
-};
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{Style, ThemeSet};
+use syntect::parsing::SyntaxSet;
 use tracing::error;
 
-pub(crate) static SYNTAXES: OnceCell<SyntaxSet> = OnceCell::new();
-static THEMES: OnceCell<ThemeSet> = OnceCell::new();
+use crate::Color;
+
+pub(crate) static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(|| {
+    syntect::dumps::from_uncompressed_data(include_bytes!("../assets/sqlite.packdump"))
+        .expect("failed to load syntaxes")
+});
+pub(crate) static THEMES: LazyLock<ThemeSet> =
+    LazyLock::new(|| syntect::dumps::from_binary(include_bytes!("../assets/themes.themedump")));
 
 pub struct SqlPrinter {
     pub(crate) highlighter: HighlightLines<'static>,
@@ -17,18 +21,11 @@ pub struct SqlPrinter {
 
 impl Default for SqlPrinter {
     fn default() -> Self {
-        let syntax_set = SYNTAXES.get_or_init(|| {
-            syntect::dumps::from_uncompressed_data(include_bytes!("../assets/sqlite.packdump"))
-                .expect("failed to load syntaxes")
-        });
-        let themes = THEMES.get_or_init(|| {
-            syntect::dumps::from_binary(include_bytes!("../assets/themes.themedump"))
-        });
-        let theme = themes
+        let theme = THEMES
             .themes
             .get("ansi")
             .expect("Failed to load ansi theme");
-        let sql_syntax = syntax_set
+        let sql_syntax = SYNTAXES
             .find_syntax_by_name("SQL")
             .expect("Failed to load SQL syntax")
             .to_owned();
@@ -52,9 +49,7 @@ impl SqlPrinter {
             .split('\n')
             .map(|line| {
                 let line = format!("{}\n", line.replace("    ", " "));
-                let regions = self
-                    .highlighter
-                    .highlight_line(&line, SYNTAXES.get().expect("Syntaxes weren't initialized"))?;
+                let regions = self.highlighter.highlight_line(&line, &SYNTAXES)?;
 
                 Ok(to_ansi_colored(&regions[..], background))
             })

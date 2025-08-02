@@ -1,7 +1,7 @@
 [package]
 authors = ["Austin Schey <aschey13@gmail.com>"]
 description = "Declarative migrations and schema management for SQLite"
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 name = "slite"
 readme = "README.md"
@@ -11,41 +11,43 @@ version = "0.0.1-dev"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ansi-to-tui = "4"
-arc-swap = { version = "1.6.0", optional = true }
+ansi-to-tui = "7"
+arc-swap = { version = "1.7.1", optional = true }
 chrono = { version = "0.4", optional = true }
-clap = { version = "4.5.4", features = ["derive", "cargo"], optional = true }
+clap = { version = "4.5.42", features = ["derive", "cargo"], optional = true }
 clap_complete = { version = "4.5.1", optional = true }
 color-eyre = { version = "0.6.3", optional = true }
-confique = { version = "0.2.5", default-features = false, features = [
+confique = { version = "0.3.1", default-features = false, features = [
   "toml",
 ], optional = true }
 content_inspector = { version = "0.2.4", optional = true }
-crossterm = { version = "0.27", optional = true }
-elm-ui = { git = "https://github.com/aschey/elm-ui-rs", rev = "b76cf0c51c628cbd574812cd0703cdef90618201", optional = true, features = [
+crossterm = { version = "0.28", optional = true }
+elm-ui = { git = "https://github.com/aschey/elm-ui-rs", rev = "c505cf27e661dc7b8134341967e066895c887ac0", optional = true, features = [
   "crossterm",
 ] }
+tui-syntax-highlight = { git = "https://github.com/aschey/tui-syntax-highlight", rev = "f803d895624967de27374e3d169fd4aca738a87f", default-features = false, features = [
+  "regex-fancy",
+] }
 futures = { version = "0.3.30", optional = true }
-gix-discover = { version = "0.31.0", optional = true }
+gix-discover = { version = "0.41.0", optional = true }
 ignore = { version = "0.4.22", optional = true }
 imara-diff = { version = "0.1", optional = true }
 minus = { version = "5.6.0", features = ["dynamic_output"], optional = true }
 normpath = { version = "1.2.0", optional = true }
-notify = { version = "6.1.1", default_features = false, features = [
+notify = { version = "8.1.0", default-features = false, features = [
   "macos_fsevent",
 ], optional = true }
-notify-debouncer-mini = { version = "0.4.1", default_features = false, optional = true }
-once_cell = "1"
+notify-debouncer-mini = { version = "0.6.0", default-features = false, optional = true }
 owo-colors = { version = "4", features = ["supports-colors"], optional = true }
 regex = "1"
-rusqlite = { version = "0.31", features = ["bundled", "load_extension"] }
+rusqlite = { version = "0.32", features = ["bundled", "load_extension"] }
 serde = { version = "1.0.197", optional = true }
 serde_regex = { version = "1.1.0", optional = true }
 syntect = { version = "5", default-features = false, features = [
   "regex-fancy",
   "parsing",
 ], optional = true }
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = [
   "sync",
   "rt-multi-thread",
@@ -54,7 +56,7 @@ tokio-stream = { version = "0.1.15", features = ["sync"], optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", optional = true }
 tracing-tree2 = { git = "https://github.com/aschey/tracing-tree", rev = "8b37c33ae50608a1cc948b64dde3434fcf683ed9", optional = true } #{version = "0.3.0", optional = true}
-ratatui = { version = "0.26.1", optional = true }
+ratatui = { version = "0.29", optional = true }
 
 [features]
 application = [
@@ -97,13 +99,13 @@ tui = [
 ]
 
 [dev-dependencies]
-elm-ui-tester = { git = "https://github.com/aschey/elm-ui-rs", rev = "b76cf0c51c628cbd574812cd0703cdef90618201", features = [
+elm-ui-tester = { git = "https://github.com/aschey/elm-ui-rs", rev = "c505cf27e661dc7b8134341967e066895c887ac0", features = [
   "tui",
   "crossterm",
 ] }
 #elm-ui-tester = {path = "../elm-ui-rs/crates/elm-ui-tester", features = ["tui", "crossterm"]}
 insta = { version = "1.31.0", features = ["filters"] }
-rstest = "0.18.1"
+rstest = "0.26.1"
 serial_test = "3.0.0"
 tempfile = "3.4.0"
 

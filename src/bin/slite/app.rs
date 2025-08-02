@@ -1,8 +1,14 @@
-use crate::app_tui::{self, TuiAppMessage};
+use std::fmt::Write;
+use std::fs;
+use std::io::{self, IsTerminal};
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::Arc;
+
 use clap::{ArgAction, Args, CommandFactory, Parser, ValueEnum};
-use clap_complete::{generate, Shell};
+use clap_complete::{Shell, generate};
 use color_eyre::Report;
-use confique::{toml, Config};
+use confique::{Config, toml};
 use elm_ui::{Command, Message};
 use minus::Pager;
 use normpath::PathExt;
@@ -10,32 +16,22 @@ use notify_debouncer_mini::DebouncedEvent;
 use owo_colors::OwoColorize;
 use regex::Regex;
 use rusqlite::Connection;
-use serde::{de::Visitor, Deserialize, Serialize};
-use slite::{
-    error::InitializationError,
-    read_extension_dir, read_sql_files,
-    tui::{AppMessage, BroadcastWriter, ConfigHandler, MigratorFactory},
-    Migrator, Options, SqlPrinter,
-};
-use std::{
-    fmt::Write,
-    fs,
-    io::{self, IsTerminal},
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
-};
+use serde::de::Visitor;
+use serde::{Deserialize, Serialize};
+use slite::error::InitializationError;
+use slite::tui::{AppMessage, BroadcastWriter, ConfigHandler, MigratorFactory};
+use slite::{Migrator, Options, SqlPrinter, read_extension_dir, read_sql_files};
 use tokio::sync::mpsc;
 use tracing::metadata::LevelFilter;
-use tracing_subscriber::{
-    filter::Targets,
-    fmt::MakeWriter,
-    prelude::*,
-    reload::{self, Handle},
-    util::SubscriberInitExt,
-    Layer, Registry,
-};
+use tracing_subscriber::filter::Targets;
+use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::reload::{self, Handle};
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{Layer, Registry};
 use tracing_tree2::HierarchicalLayer;
+
+use crate::app_tui::{self, TuiAppMessage};
 
 #[derive(ValueEnum, Clone)]
 enum SchemaType {
@@ -361,10 +357,13 @@ impl ConfigStore {
             search
                 .as_ref()
                 .map(|p| {
-                    e.path
-                        .normalize()
-                        .unwrap()
-                        .starts_with(p.normalize().unwrap())
+                    if let Ok(e_norm) = e.path.normalize()
+                        && let Ok(p_norm) = p.normalize()
+                    {
+                        e_norm.starts_with(p_norm)
+                    } else {
+                        false
+                    }
                 })
                 .unwrap_or(false)
         })
@@ -464,11 +463,7 @@ impl App {
             match git_root {
                 Some(git_root) => {
                     let path = git_root.join("slite.toml");
-                    if path.exists() {
-                        Some(path)
-                    } else {
-                        None
-                    }
+                    if path.exists() { Some(path) } else { None }
                 }
                 None => None,
             }

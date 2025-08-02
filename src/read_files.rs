@@ -1,8 +1,6 @@
 const MAX_PEEK_SIZE: usize = 1024;
-use std::{
-    io::{self, Read},
-    path::PathBuf,
-};
+use std::io::{self, Read};
+use std::path::PathBuf;
 
 use ignore::WalkBuilder;
 

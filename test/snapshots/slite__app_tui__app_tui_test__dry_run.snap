@@ -6,9 +6,9 @@ expression: view
    Source |  Target |  Diff |  Migrate                                      
  ────────────────────────────────────────────────────────────────────────────── 
  ╭Controls────────────╮╭Logs yyyy-mm-dd hh:mm:dd──────────────────────────────╮ 
- │   Dry Run         ││┐Starting migration                                   │ 
+ │   Dry Run         ││┐Starting migration                                   │ 
  │                    ││├─┐Migrating tables                                   │ 
- │   Generate Script │││ ├─┐Creating tables                                  │ 
+ │   Generate Script │││ ├─┐Creating tables                                  │ 
  │                    │││ │ ├─ Creating table album                           │ 
  │   Migrate         │││ │ ├─ Creating table album_artist                    │ 
  │                    │││ │ ├─ Creating table artist                          │ 
@@ -60,6 +60,4 @@ expression: view
  │                    ││                                                      │ 
  │                    ││                                                      │ 
  │                    ││                                                      │ 
- ╰────────────────────╯╰──────────────────────────────────────────────────────╯ 
-                                                                                
-
+ ╰────────────────────╯╰──────────────────────────────────────────────────────╯

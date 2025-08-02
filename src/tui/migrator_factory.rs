@@ -1,8 +1,9 @@
-use crate::{
-    error::InitializationError, read_sql_files, Config, MigrationMetadata, Migrator, Options,
-};
-use rusqlite::{Connection, OpenFlags};
 use std::path::PathBuf;
+
+use rusqlite::{Connection, OpenFlags};
+
+use crate::error::InitializationError;
+use crate::{Config, MigrationMetadata, Migrator, Options, read_sql_files};
 
 #[derive(Debug, Clone)]
 pub struct MigratorFactory {

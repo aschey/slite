@@ -1,4 +1,5 @@
-use std::{io, path::PathBuf};
+use std::io;
+use std::path::PathBuf;
 
 #[derive(thiserror::Error, Debug)]
 pub enum InitializationError {
@@ -31,7 +32,9 @@ pub struct QueryError(pub(crate) String, #[source] pub(crate) rusqlite::Error);
 #[derive(thiserror::Error, Debug)]
 pub enum SqlFormatError {
     #[error("Error formatting SQL {0}: {1}")]
-    TextFormattingFailure(String, #[source] ansi_to_tui::Error),
+    TextFormattingFailure(String, #[source] tui_syntax_highlight::Error),
+    #[error("Error converting text {0}: {1}")]
+    AnsiConversionFailure(String, #[source] ansi_to_tui::Error),
 }
 
 #[derive(thiserror::Error, Debug)]

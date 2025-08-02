@@ -1,26 +1,26 @@
-use crate::{
-    error::{InitializationError, SqlFormatError},
-    Options,
-};
+use std::marker::PhantomData;
+use std::rc::Rc;
+
 use ansi_to_tui::IntoText;
 use chrono::Local;
 use elm_ui::{Command, Message, Model, OptionalCommand};
 use futures::StreamExt;
-use ratatui::{
-    buffer::Buffer,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph, StatefulWidget, Widget, Wrap},
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{
+    Block, BorderType, Borders, Clear, Paragraph, StatefulWidget, Widget, Wrap,
 };
-use std::{marker::PhantomData, rc::Rc};
 use tokio_stream::wrappers::BroadcastStream;
 use tracing::error;
 
 use super::{
-    panel, BiPanel, BiPanelState, BroadcastWriter, Button, MigratorFactory, Scrollable,
-    ScrollableState,
+    BiPanel, BiPanelState, BroadcastWriter, Button, MigratorFactory, Scrollable, ScrollableState,
+    panel,
 };
+use crate::Options;
+use crate::error::{InitializationError, SqlFormatError};
 
 pub enum MigrationMessage {
     ProcessCompleted,
@@ -324,7 +324,7 @@ impl<'a> MigrationState<'a> {
         self.formatted_logs = self
             .logs
             .into_text()
-            .map_err(|e| SqlFormatError::TextFormattingFailure(log.to_string(), e))?;
+            .map_err(|e| SqlFormatError::AnsiConversionFailure(log.to_string(), e))?;
         self.scroller
             .set_content_height(self.formatted_logs.height() as u16);
         Ok(())

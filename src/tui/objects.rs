@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
 
-use ratatui::{
-    style::{Color, Modifier, Style},
-    text::Text,
-    widgets::{Block, List, ListItem, ListState, StatefulWidget},
-};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::Text;
+use ratatui::widgets::{Block, List, ListItem, ListState, StatefulWidget};
 
 use crate::ObjectType;
 

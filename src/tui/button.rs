@@ -1,7 +1,5 @@
-use ratatui::{
-    style::{Color, Modifier, Style},
-    text::Span,
-};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::Span;
 
 pub struct Button<'a> {
     enabled: bool,

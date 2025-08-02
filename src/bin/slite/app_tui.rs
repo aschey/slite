@@ -1,21 +1,21 @@
-use color_eyre::{eyre, Report};
-use crossterm::{
-    execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle,
-    },
+use std::io;
+use std::marker::PhantomData;
+use std::path::PathBuf;
+use std::rc::Rc;
+
+use color_eyre::{Report, eyre};
+use crossterm::execute;
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, SetTitle, disable_raw_mode, enable_raw_mode,
 };
 use elm_ui::{Command, Message, Model, OptionalCommand, Program};
-use ratatui::{
-    backend::{Backend, CrosstermBackend},
-    Terminal,
-};
-use slite::{
-    error::RefreshError,
-    tui::{AppState, MigratorFactory, ReloadableConfig},
-};
-use std::{io, marker::PhantomData, path::PathBuf, rc::Rc};
-use tracing_subscriber::{filter::Targets, reload::Handle, Registry};
+use ratatui::Terminal;
+use ratatui::backend::{Backend, CrosstermBackend};
+use slite::error::RefreshError;
+use slite::tui::{AppState, MigratorFactory, ReloadableConfig};
+use tracing_subscriber::Registry;
+use tracing_subscriber::filter::Targets;
+use tracing_subscriber::reload::Handle;
 
 use crate::app::{Conf, ConfigStore};
 
@@ -136,7 +136,7 @@ impl<'a, B: Backend> Model for TuiApp<'a, B> {
             .draw(|f| {
                 f.render_stateful_widget(
                     slite::tui::App::default(),
-                    f.size(),
+                    f.area(),
                     &mut self.state.clone(),
                 )
             })

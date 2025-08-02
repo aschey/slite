@@ -1,15 +1,13 @@
-use std::{
-    fmt::Debug,
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::fmt::Debug;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use confique::Config;
 use elm_ui::Command;
 use notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
+use notify_debouncer_mini::{DebouncedEvent, Debouncer, new_debouncer};
 use tokio::sync::mpsc;
 use tracing::error;
 
@@ -62,10 +60,9 @@ impl<T: Config + Debug + Send + Sync + 'static> ReloadableConfig<T> {
 
         for path in paths {
             if path.exists() {
-                debouncer
-                    .watcher()
-                    .watch(&path, RecursiveMode::Recursive)
-                    .unwrap();
+                if let Err(e) = debouncer.watcher().watch(&path, RecursiveMode::Recursive) {
+                    error!("{e}");
+                }
             }
         }
 
@@ -100,12 +97,15 @@ impl<T: Config + Debug + Send + Sync + 'static> ReloadableConfig<T> {
 
         if let Some(new_path) = new_path {
             if new_path.exists() {
-                self.debouncer
+                if let Err(e) = self
+                    .debouncer
                     .lock()
                     .unwrap()
                     .watcher()
                     .watch(new_path, RecursiveMode::Recursive)
-                    .unwrap();
+                {
+                    error!("{e}");
+                }
             }
         }
     }

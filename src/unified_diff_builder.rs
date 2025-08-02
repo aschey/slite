@@ -2,8 +2,8 @@ use std::fmt::{Display, Write};
 use std::hash::Hash;
 use std::ops::Range;
 
-use imara_diff::intern::{InternedInput, Interner, Token};
 use imara_diff::Sink;
+use imara_diff::intern::{InternedInput, Interner, Token};
 use owo_colors::OwoColorize;
 use tracing::error;
 

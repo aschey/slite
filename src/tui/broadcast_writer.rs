@@ -1,9 +1,10 @@
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+
 use tokio::sync::broadcast;
 use tracing_subscriber::fmt::MakeWriter;
 
-static LOG_SENDER: OnceCell<broadcast::Sender<String>> = OnceCell::new();
+static LOG_SENDER: OnceLock<broadcast::Sender<String>> = OnceLock::new();
 static ENABLED: AtomicBool = AtomicBool::new(true);
 
 pub struct BroadcastWriter {

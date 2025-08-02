@@ -1,29 +1,29 @@
-use crate::{app::Conf, app_tui::TuiApp};
 use confique::Config;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use elm_ui_tester::{TerminalView, UiTester};
-use ratatui::{
-    backend::TestBackend,
-    buffer::Buffer,
-    style::{Color, Modifier},
-    Terminal,
-};
+use ratatui::Terminal;
+use ratatui::backend::TestBackend;
+use ratatui::buffer::Buffer;
+use ratatui::style::{Color, Modifier};
 use serial_test::serial;
-use slite::{
-    read_extension_dir, read_sql_files,
-    tui::{BroadcastWriter, MigratorFactory},
-};
+use slite::tui::{BroadcastWriter, MigratorFactory};
+use slite::{read_extension_dir, read_sql_files};
 use tempfile::TempDir;
 use tracing::metadata::LevelFilter;
-use tracing_subscriber::{filter::Targets, prelude::*, reload, Layer, Registry};
+use tracing_subscriber::filter::Targets;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::{Layer, Registry, reload};
 use tracing_tree2::HierarchicalLayer;
+
+use crate::app::Conf;
+use crate::app_tui::TuiApp;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_load() {
     let (tester, _tempdir) = setup(80, 50);
     tester
         .wait_for(|term| {
-            term.terminal_view().contains("album") && term.get(5, 5).bg == Color::Black
+            term.terminal_view().contains("album") && term.cell((5, 5)).unwrap().bg == Color::Black
         })
         .await
         .unwrap();
@@ -43,14 +43,14 @@ async fn test_load() {
 async fn test_scroll_down() {
     let (tester, _tempdir) = setup(80, 50);
     tester
-        .wait_for(|term| term.get(5, 5).bg == Color::Black)
+        .wait_for(|term| term.cell((5, 5)).unwrap().bg == Color::Black)
         .await
         .unwrap();
     tester
         .send_key(KeyEvent::new(KeyCode::Down, KeyModifiers::empty()))
         .await;
     tester
-        .wait_for(|term| term.get(5, 6).bg == Color::Black)
+        .wait_for(|term| term.cell((5, 6)).unwrap().bg == Color::Black)
         .await
         .unwrap();
     tester
@@ -72,7 +72,7 @@ async fn test_view_target() {
         .send_key(KeyEvent::new(KeyCode::Right, KeyModifiers::empty()))
         .await;
     tester
-        .wait_for(|term| term.get(15, 1).fg == Color::White)
+        .wait_for(|term| term.cell((15, 1)).unwrap().fg == Color::White)
         .await
         .unwrap();
     tester
@@ -143,7 +143,12 @@ async fn test_generate_script() {
         .await;
 
     tester
-        .wait_for(|term| term.get(5, 6).modifier.contains(Modifier::REVERSED))
+        .wait_for(|term| {
+            term.cell((5, 6))
+                .unwrap()
+                .modifier
+                .contains(Modifier::REVERSED)
+        })
         .await
         .map_err(|e| e.terminal_view())
         .unwrap();
@@ -153,7 +158,10 @@ async fn test_generate_script() {
 
     tester
         .wait_for(|term| {
-            term.get(5, 6).modifier.contains(Modifier::REVERSED)
+            term.cell((5, 6))
+                .unwrap()
+                .modifier
+                .contains(Modifier::REVERSED)
                 && term
                     .terminal_view()
                     .contains("CREATE TRIGGER after_song_update")

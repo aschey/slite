@@ -7,13 +7,13 @@ expression: view
  ────────────────────────────────────────────────────────────────────────────── 
  ╭Source──────────────────────╮╭SQL───────────────────────────────────────────╮ 
  │Tables                      ││CREATE TABLE album_artist (                   │ 
- │  album                     ││ album_artist_id INTEGER PRIMARY KEY NOT NULL,│ 
- │  album_artist              ││ album_artist_name TEXT NOT NULL COLLATE      │ 
- │  artist                    ││NOCASE,                                       │ 
- │  search_index              ││ created_date INTEGER NOT NULL,               │ 
- │  search_spellfix           ││ UNIQUE (album_artist_name COLLATE NOCASE)    │ 
- │  search_vocab              ││)                                             │ 
- │  song                      ││                                              │ 
+ │  album                     ││    album_artist_id INTEGER PRIMARY KEY NOT   │ 
+ │  album_artist              ││NULL,                                         │ 
+ │  artist                    ││    album_artist_name TEXT NOT NULL COLLATE   │ 
+ │  search_index              ││NOCASE,                                       │ 
+ │  search_spellfix           ││    created_date INTEGER NOT NULL,            │ 
+ │  search_vocab              ││    UNIQUE (album_artist_name COLLATE NOCASE) │ 
+ │  song                      ││)                                             │ 
  │Indexes                     ││                                              │ 
  │  idx_song_path             ││                                              │ 
  │Views                       ││                                              │ 
@@ -50,6 +50,4 @@ expression: view
  │                            ││                                              │ 
  │                            ││                                              │ 
  │                            ││                                              │ 
- ╰────────────────────────────╯╰──────────────────────────────────────────────╯ 
-                                                                                
-
+ ╰────────────────────────────╯╰──────────────────────────────────────────────╯

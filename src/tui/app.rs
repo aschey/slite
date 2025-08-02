@@ -1,18 +1,19 @@
-use super::{MigrationMessage, MigrationState, MigratorFactory, SqlState};
-use crate::{
-    error::{InitializationError, RefreshError, SqlFormatError},
-    Config,
-};
+use std::io::Stdout;
+use std::marker::PhantomData;
+use std::path::PathBuf;
+use std::rc::Rc;
+
 use elm_ui::{Command, Message, Model, OptionalCommand};
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, BorderType, Borders, StatefulWidget, Tabs, Widget},
-    Terminal,
-};
-use std::{io::Stdout, marker::PhantomData, path::PathBuf, rc::Rc};
+use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
+use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, BorderType, Borders, StatefulWidget, Tabs, Widget};
+
+use super::{MigrationMessage, MigrationState, MigratorFactory, SqlState};
+use crate::Config;
+use crate::error::{InitializationError, RefreshError, SqlFormatError};
 
 #[derive(PartialEq, Eq)]
 pub enum ControlFlow {
@@ -281,7 +282,7 @@ impl<'a> Model for AppState<'a> {
 
     fn view(&self, writer: &mut Self::Writer) -> Result<(), Self::Error> {
         writer
-            .draw(|f| f.render_stateful_widget(App::default(), f.size(), &mut self.clone()))
+            .draw(|f| f.render_stateful_widget(App::default(), f.area(), &mut self.clone()))
             .map_err(RefreshError::IoFailure)?;
         Ok(())
     }

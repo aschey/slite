@@ -6,9 +6,9 @@ expression: view
    Source |  Target |  Diff |  Migrate                                                          
  ────────────────────────────────────────────────────────────────────────────────────────────────── 
  ╭Controls────────────╮╭Logs yyyy-mm-dd hh:mm:dd──────────────────────────────────────────────────╮ 
- │   Dry Run         ││PRAGMA defer_foreign_keys = TRUE                                          │ 
+ │   Dry Run         ││PRAGMA defer_foreign_keys = TRUE                                          │ 
  │                    ││                                                                          │ 
- │   Generate Script ││CREATE TABLE album (                                                      │ 
+ │   Generate Script ││CREATE TABLE album (                                                      │ 
  │                    ││ album_id INTEGER PRIMARY KEY NOT NULL,                                   │ 
  │   Migrate         ││ album_name TEXT NOT NULL COLLATE NOCASE,                                 │ 
  │                    ││ album_artist_id INTEGER NOT NULL,                                        │ 
@@ -200,6 +200,4 @@ expression: view
  │                    ││                                                                          │ 
  │                    ││                                                                          │ 
  │                    ││                                                                          │ 
- ╰────────────────────╯╰──────────────────────────────────────────────────────────────────────────╯ 
-                                                                                                    
-
+ ╰────────────────────╯╰──────────────────────────────────────────────────────────────────────────╯

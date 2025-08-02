@@ -1,8 +1,6 @@
-use ratatui::{
-    style::{Color, Modifier, Style},
-    text::Span,
-    widgets::{Block, BorderType, Borders},
-};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::Span;
+use ratatui::widgets::{Block, BorderType, Borders};
 
 pub trait BiPanel {
     fn left_next(&mut self);

@@ -1,8 +1,9 @@
-use rusqlite::{
-    types::FromSql, Connection, LoadExtensionGuard, Params, Row, Transaction, TransactionBehavior,
-};
-use std::{fmt::Display, path::PathBuf};
-use tracing::{debug, span, trace, warn, Level};
+use std::fmt::Display;
+use std::path::PathBuf;
+
+use rusqlite::types::FromSql;
+use rusqlite::{Connection, LoadExtensionGuard, Params, Row, Transaction, TransactionBehavior};
+use tracing::{Level, debug, span, trace, warn};
 
 use crate::{InitializationError, Metadata, MigrationError, QueryError, Settings, SqlPrinter};
 
