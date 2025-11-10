@@ -194,18 +194,18 @@ impl<'a> AppState<'a> {
     ) -> Result<ControlFlow, InitializationError> {
         use crossterm::event::{Event, KeyCode, KeyEventKind};
 
-        if let Event::Key(key) = event {
-            if key.kind == KeyEventKind::Press {
-                match (key.code, self.index) {
-                    (KeyCode::Char('q'), _) => return Ok(ControlFlow::Quit),
-                    (KeyCode::Right, _) if !(self.index == 3 && self.migration.popup_active()) => {
-                        self.next_tab()
-                    }
-                    (KeyCode::Left, _) if !(self.index == 3 && self.migration.popup_active()) => {
-                        self.previous_tab()
-                    }
-                    _ => {}
+        if let Event::Key(key) = event
+            && key.kind == KeyEventKind::Press
+        {
+            match (key.code, self.index) {
+                (KeyCode::Char('q'), _) => return Ok(ControlFlow::Quit),
+                (KeyCode::Right, _) if !(self.index == 3 && self.migration.popup_active()) => {
+                    self.next_tab()
                 }
+                (KeyCode::Left, _) if !(self.index == 3 && self.migration.popup_active()) => {
+                    self.previous_tab()
+                }
+                _ => {}
             }
         }
 

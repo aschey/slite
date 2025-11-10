@@ -7,6 +7,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::Color;
 use ratatui::text::Text;
 use ratatui::widgets::{Paragraph, StatefulWidget, Wrap};
+use syntect::util::LinesWithEndings;
 use tui_syntax_highlight::Highlighter;
 
 use super::{
@@ -162,10 +163,9 @@ impl<'a> SqlState<'a> {
             .iter()
             .flat_map(|(_, objects)| {
                 objects.values().map(|text| {
-                    Ok(highlighter
-                        .highlight_lines(text.clone(), &sql_syntax, &SYNTAXES)
-                        .map_err(|e| SqlFormatError::TextFormattingFailure(text.to_owned(), e))?
-                        .into_text())
+                    highlighter
+                        .highlight_lines(LinesWithEndings::from(text), &sql_syntax, &SYNTAXES)
+                        .map_err(|e| SqlFormatError::TextFormattingFailure(text.to_owned(), e))
                 })
             })
             .collect();
@@ -229,14 +229,14 @@ impl<'a> SqlState<'a> {
     pub fn handle_event(&mut self, event: &crossterm::event::Event) {
         use crossterm::event::{Event, KeyCode, KeyEventKind};
 
-        if let Event::Key(key) = event {
-            if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Up => self.previous(),
-                    KeyCode::Down => self.next(),
-                    KeyCode::Tab => self.toggle_focus(),
-                    _ => {}
-                }
+        if let Event::Key(key) = event
+            && key.kind == KeyEventKind::Press
+        {
+            match key.code {
+                KeyCode::Up => self.previous(),
+                KeyCode::Down => self.next(),
+                KeyCode::Tab => self.toggle_focus(),
+                _ => {}
             }
         }
     }

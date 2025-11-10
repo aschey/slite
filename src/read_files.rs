@@ -53,8 +53,8 @@ pub fn read_extension_dir(extension_dir: impl Into<PathBuf>) -> Result<Vec<PathB
     Ok(paths
         .iter()
         .filter_map(|p| {
-            if p.is_file() {
-                if let Ok(file) = std::fs::File::open(p) {
+            if p.is_file()
+                && let Ok(file) = std::fs::File::open(p) {
                     let mut buffer: Vec<u8> = vec![];
 
                     file.take(MAX_PEEK_SIZE as u64)
@@ -66,7 +66,6 @@ pub fn read_extension_dir(extension_dir: impl Into<PathBuf>) -> Result<Vec<PathB
                         return Some(PathBuf::from(p));
                     }
                 }
-            }
             None
         })
         .collect())
@@ -79,10 +78,9 @@ pub fn get_sequence(path: &std::path::Path) -> i32 {
         .to_string_lossy()
         .to_string();
     let seq = path_str.split('-').next();
-    if let Some(first) = seq {
-        if let Ok(seq_num) = first.parse::<i32>() {
+    if let Some(first) = seq
+        && let Ok(seq_num) = first.parse::<i32>() {
             return seq_num;
         }
-    }
     i32::MIN
 }

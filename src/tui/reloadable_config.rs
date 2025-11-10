@@ -59,11 +59,10 @@ impl<T: Config + Debug + Send + Sync + 'static> ReloadableConfig<T> {
         .unwrap();
 
         for path in paths {
-            if path.exists() {
-                if let Err(e) = debouncer.watcher().watch(&path, RecursiveMode::Recursive) {
+            if path.exists()
+                && let Err(e) = debouncer.watcher().watch(&path, RecursiveMode::Recursive) {
                     error!("{e}");
                 }
-            }
         }
 
         Self {
@@ -84,8 +83,8 @@ impl<T: Config + Debug + Send + Sync + 'static> ReloadableConfig<T> {
     }
 
     pub fn switch_path(&mut self, old_path: Option<&Path>, new_path: Option<&Path>) {
-        if let Some(old_path) = old_path {
-            if old_path.exists() {
+        if let Some(old_path) = old_path
+            && old_path.exists() {
                 self.debouncer
                     .lock()
                     .unwrap()
@@ -93,11 +92,10 @@ impl<T: Config + Debug + Send + Sync + 'static> ReloadableConfig<T> {
                     .unwatch(old_path)
                     .unwrap();
             }
-        }
 
-        if let Some(new_path) = new_path {
-            if new_path.exists() {
-                if let Err(e) = self
+        if let Some(new_path) = new_path
+            && new_path.exists()
+                && let Err(e) = self
                     .debouncer
                     .lock()
                     .unwrap()
@@ -106,7 +104,5 @@ impl<T: Config + Debug + Send + Sync + 'static> ReloadableConfig<T> {
                 {
                     error!("{e}");
                 }
-            }
-        }
     }
 }

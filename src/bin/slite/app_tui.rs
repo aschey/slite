@@ -101,8 +101,8 @@ impl<'a, B: Backend> Model for TuiApp<'a, B> {
 
     fn update(&mut self, msg: Rc<Message>) -> Result<OptionalCommand, Self::Error> {
         let cmd = self.state.update(msg.clone()).unwrap();
-        if let Message::Custom(msg) = msg.as_ref() {
-            if let Some(msg) = msg.downcast_ref::<TuiAppMessage>() {
+        if let Message::Custom(msg) = msg.as_ref()
+            && let Some(msg) = msg.downcast_ref::<TuiAppMessage>() {
                 match (msg, self.config.as_mut()) {
                     (TuiAppMessage::ConfigCreated(config), _) => {
                         self.config = Some(config.clone());
@@ -127,7 +127,6 @@ impl<'a, B: Backend> Model for TuiApp<'a, B> {
                     _ => {}
                 }
             }
-        }
         Ok(cmd)
     }
 

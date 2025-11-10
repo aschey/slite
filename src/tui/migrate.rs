@@ -212,8 +212,8 @@ impl<'a> MigrationState<'a> {
     ) -> Result<Option<Box<dyn FnOnce() -> MigrationMessage + Send>>, InitializationError> {
         use crossterm::event::{Event, KeyCode, KeyEventKind};
 
-        if let Event::Key(key) = event {
-            if key.kind == KeyEventKind::Press {
+        if let Event::Key(key) = event
+            && key.kind == KeyEventKind::Press {
                 match key.code {
                     KeyCode::Up => self.previous(),
                     KeyCode::Down => self.next(),
@@ -225,7 +225,6 @@ impl<'a> MigrationState<'a> {
                     _ => {}
                 }
             }
-        }
 
         Ok(None)
     }

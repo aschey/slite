@@ -317,7 +317,7 @@ impl ConfigHandler<Conf> for ConfigStore {
 
     fn create_config(&self, path: &Path) -> Conf {
         let cli_config = self.cli_config.clone();
-        let partial = confique_partial_conf::PartialConf {
+        let partial = confique_conf_layer::ConfLayer {
             source: cli_config.source,
             target: cli_config.target,
             pre_migration: cli_config.pre_migration,
@@ -431,7 +431,7 @@ impl App {
         let cli = Cli::parse();
         let cli_config = cli.config.clone();
         let cli_config_ = cli_config.clone();
-        let partial = confique_partial_conf::PartialConf {
+        let partial = confique_conf_layer::ConfLayer {
             source: cli_config.source,
             target: cli_config.target,
             extension_dir: cli_config.extension_dir,
