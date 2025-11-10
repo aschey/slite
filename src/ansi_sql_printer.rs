@@ -57,7 +57,7 @@ impl SqlPrinter {
         match formatted {
             Ok(parts) => parts.join(""),
             Err(e) => {
-                error!("Error highligting sql {sql}: {e}");
+                error!("Error highlighting sql {sql}: {e}");
                 sql.to_owned()
             }
         }
