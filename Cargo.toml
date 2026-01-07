@@ -99,7 +99,7 @@ tui = [
 ]
 
 [dev-dependencies]
-elm-ui-tester = { git = "https://github.com/aschey/elm-ui-rs", rev = "c505cf27e661dc7b8134341967e066895c887ac0", features = [
+elm-ui-tester = { git = "https://github.com/aschey/elm-ui-rs", rev = "6fcbd456472c5626d5a3b320db3bf0a2d464b0f3", features = [
   "tui",
   "crossterm",
 ] }
